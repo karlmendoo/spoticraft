@@ -3,7 +3,7 @@
   "id": "spoticraft",
   "version": "${version}",
   "name": "SpotiCraft",
-  "description": "Spotify integration for Minecraft 1.21.4 - control your music without tabbing out",
+  "description": "Spotify integration for Minecraft 1.21.11 - control your music without tabbing out",
   "authors": [
     "karlmendoo"
   ],
@@ -27,7 +27,7 @@
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
-    "minecraft": "~1.21.4",
+    "minecraft": "~1.21.11",
     "java": ">=21"
   }
 }
