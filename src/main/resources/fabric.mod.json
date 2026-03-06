@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "spoticraft",
+  "version": "${version}",
+  "name": "SpotiCraft",
+  "description": "Spotify integration for Minecraft 1.21.11 - control your music without tabbing out",
+  "authors": [
+    "karlmendoo"
+  ],
+  "contact": {
+    "sources": "https://github.com/karlmendoo/spoticraft"
+  },
+  "license": "MIT",
+  "icon": "assets/spoticraft/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "com.spoticraft.SpotiCraftMod"
+    ],
+    "client": [
+      "com.spoticraft.SpotiCraftClient"
+    ]
+  },
+  "mixins": [
+    "spoticraft.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "fabric-api": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}

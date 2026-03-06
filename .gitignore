@@ -1,0 +1,38 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# Eclipse
+.eclipse/
+.settings/
+.classpath
+.project
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VSCode
+.vscode/
+
+# MacOS
+.DS_Store
+
+# Fabric Loom cache
+.loom-cache/
+run/
+
+# Java
+*.class
+*.jar
+*.war
+!gradle/wrapper/gradle-wrapper.jar
+
+# Generated sources (remapped)
+remappedSrc/
+
+# Env
+*.env
