@@ -29,6 +29,7 @@ run/
 *.class
 *.jar
 *.war
+!gradle/wrapper/gradle-wrapper.jar
 
 # Generated sources (remapped)
 remappedSrc/
