@@ -1,6 +1,6 @@
 # 🎵 SpotiCraft
 
-A complete Spotify integration mod for **Minecraft 1.21.11** (Fabric). Control your Spotify music without ever tabbing out of the game — featuring a polished in-game UI, keybinds, HUD overlay, and full playback control.
+A complete Spotify integration mod for **Minecraft 1.21.4** (Fabric). Control your Spotify music without ever tabbing out of the game — featuring a polished in-game UI, keybinds, HUD overlay, and full playback control.
 
 ---
 
@@ -21,9 +21,9 @@ A complete Spotify integration mod for **Minecraft 1.21.11** (Fabric). Control y
 
 | Component | Version |
 |-----------|---------|
-| Minecraft | **1.21.11** |
-| Fabric Loader | 0.15.9+ |
-| Fabric API | 0.99.0+1.21.11 |
+| Minecraft | **1.21.4** |
+| Fabric Loader | 0.16.9+ |
+| Fabric API | 0.119.5+1.21.4 |
 | Java | 21 |
 
 ---
@@ -44,7 +44,7 @@ A complete Spotify integration mod for **Minecraft 1.21.11** (Fabric). Control y
 ### 2. Configure SpotiCraft
 
 1. Install the mod in your `mods/` folder
-2. Launch Minecraft 1.21.11 with Fabric
+2. Launch Minecraft 1.21.4 with Fabric
 3. Press **`M`** to open SpotiCraft
 4. Go to the **Settings** tab
 5. Paste your **Spotify Client ID** and click **Save**

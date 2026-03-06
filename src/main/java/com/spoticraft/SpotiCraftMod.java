@@ -17,7 +17,7 @@ public class SpotiCraftMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("SpotiCraft initializing for Minecraft 1.21.11...");
+        LOGGER.info("SpotiCraft initializing for Minecraft 1.21.4...");
         // Load configuration on startup
         SpotiCraftConfig.load();
         LOGGER.info("SpotiCraft initialized. Use 'M' key to open the SpotiCraft UI.");
