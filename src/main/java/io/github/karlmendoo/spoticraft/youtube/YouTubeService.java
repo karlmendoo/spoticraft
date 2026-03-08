@@ -224,10 +224,15 @@ public final class YouTubeService {
     public void togglePlayPause() {
         submit("Updating playback…", () -> {
             if (!this.audioEngine.hasTrack()) {
+                if (!this.queue.isEmpty() && this.queueIndex >= 0 && this.queueIndex < this.queue.size()) {
+                    startCurrentMedia(0, "Resumed in-game playback.");
+                    return;
+                }
                 this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
                 return;
             }
-            if (this.audioEngine.isPlaying()) {
+            PlaybackState engineState = this.audioEngine.playbackState();
+            if (engineState == PlaybackState.PLAYING || engineState == PlaybackState.BUFFERING) {
                 this.audioEngine.pause();
                 syncPlaybackSnapshot();
                 this.statusMessage = "Paused in-game playback.";
@@ -361,6 +366,9 @@ public final class YouTubeService {
     }
 
     public void play(LibraryItem item) {
+        if (item == null) {
+            return;
+        }
         submit("Starting playback…", () -> {
             ResolvedPlayback resolvedPlayback = this.apiClient.resolvePlayback(item);
             if (resolvedPlayback.items().isEmpty()) {
@@ -373,6 +381,9 @@ public final class YouTubeService {
     }
 
     public void queue(LibraryItem item) {
+        if (item == null) {
+            return;
+        }
         submit("Adding to queue…", () -> {
             ResolvedPlayback resolvedPlayback = this.apiClient.resolvePlayback(item);
             if (resolvedPlayback.items().isEmpty()) {
@@ -528,8 +539,17 @@ public final class YouTubeService {
     }
 
     private void syncPlaybackSnapshot() {
+        PlaybackState engineState = this.audioEngine.playbackState();
         if (!this.audioEngine.hasTrack() || this.queue.isEmpty() || this.queueIndex < 0 || this.queueIndex >= this.queue.size()) {
             if (!this.audioEngine.hasTrack()) {
+                PlaybackState resolvedState;
+                if (engineState == PlaybackState.ERROR || this.playback.state() == PlaybackState.ERROR) {
+                    resolvedState = PlaybackState.ERROR;
+                } else if (engineState == PlaybackState.BUFFERING) {
+                    resolvedState = PlaybackState.BUFFERING;
+                } else {
+                    resolvedState = PlaybackState.STOPPED;
+                }
                 this.playback = new PlaybackSnapshot(
                     this.playback.trackId(),
                     this.playback.trackUri(),
@@ -538,7 +558,7 @@ public final class YouTubeService {
                     this.playback.album(),
                     this.playback.imageUrl(),
                     false,
-                    this.playback.state() == PlaybackState.ERROR ? PlaybackState.ERROR : PlaybackState.STOPPED,
+                    resolvedState,
                     this.playback.progressMs(),
                     this.playback.durationMs(),
                     this.playback.volumePercent(),

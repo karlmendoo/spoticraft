@@ -54,62 +54,92 @@ public final class AlbumArtCache {
                 return identifier;
             }
         }
-        long now = System.currentTimeMillis();
         for (String candidate : candidates) {
+            if (this.loading.contains(candidate)) {
+                return null;
+            }
+        }
+        loadCandidateChain(candidates, 0);
+        return null;
+    }
+
+    private void loadCandidateChain(List<String> candidates, int startIndex) {
+        long now = System.currentTimeMillis();
+        for (int index = startIndex; index < candidates.size(); index++) {
+            String candidate = candidates.get(index);
             Long failedAt = this.failedLoads.get(candidate);
             if (failedAt != null && now - failedAt < FAILURE_RETRY_DELAY_MS) {
                 continue;
             }
             if (!this.loading.add(candidate)) {
-                continue;
+                return;
             }
-            loadAsync(candidate);
-            break;
+            final int nextIndex = index + 1;
+            loadAsync(candidate, candidates, nextIndex);
+            return;
         }
-        return null;
     }
 
-    private void loadAsync(String imageUrl) {
+    private void loadAsync(String imageUrl, List<String> candidates, int nextIndex) {
         Thread.startVirtualThread(() -> {
             try {
                 HttpRequest request = HttpRequest.newBuilder(URI.create(imageUrl))
                     .header("User-Agent", USER_AGENT)
-                    .header("Accept", "image/png,image/jpeg,image/webp,image/*,*/*;q=0.8")
+                    .header("Accept", "image/jpeg, image/png, */*;q=0.1")
                     .GET()
                     .build();
                 HttpResponse<byte[]> response = this.httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
                 if (response.statusCode() / 100 != 2) {
                     markFailure(imageUrl, "Album art request returned status " + response.statusCode(), null);
+                    loadCandidateChain(candidates, nextIndex);
                     return;
                 }
                 if (response.body().length == 0) {
                     markFailure(imageUrl, "Album art response was empty", null);
+                    loadCandidateChain(candidates, nextIndex);
                     return;
                 }
                 NativeImage image;
                 try (ByteArrayInputStream inputStream = new ByteArrayInputStream(response.body())) {
                     image = NativeImage.read(inputStream);
                 }
-                if (image == null) {
-                    markFailure(imageUrl, "Album art response could not be decoded", null);
+                if (image == null || image.getWidth() <= 0 || image.getHeight() <= 0) {
+                    if (image != null) {
+                        image.close();
+                    }
+                    markFailure(imageUrl, "Album art response could not be decoded or had invalid dimensions", null);
+                    loadCandidateChain(candidates, nextIndex);
                     return;
                 }
+                final NativeImage validImage = image;
                 MinecraftClient client = MinecraftClient.getInstance();
                 client.execute(() -> {
-                    Identifier dynamic = Identifier.of("spoticraft", "album/" + Integer.toHexString(imageUrl.hashCode()));
-                    client.getTextureManager().registerTexture(
-                        dynamic,
-                        new NativeImageBackedTexture(() -> "spoticraft_album_art", image)
-                    );
-                    this.cache.put(imageUrl, dynamic);
-                    this.failedLoads.remove(imageUrl);
-                    this.loading.remove(imageUrl);
+                    try {
+                        Identifier dynamic = Identifier.of("spoticraft", "album/" + Integer.toHexString(imageUrl.hashCode()));
+                        client.getTextureManager().registerTexture(
+                            dynamic,
+                            new NativeImageBackedTexture(() -> "spoticraft_album_art", validImage)
+                        );
+                        this.cache.put(imageUrl, dynamic);
+                        this.failedLoads.remove(imageUrl);
+                    } catch (RuntimeException exception) {
+                        this.logger.warn("Failed to register album art texture: {}", imageUrl, exception);
+                        this.failedLoads.put(imageUrl, System.currentTimeMillis());
+                    } finally {
+                        this.loading.remove(imageUrl);
+                    }
                 });
             } catch (IOException | InterruptedException exception) {
                 if (exception instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                 }
                 markFailure(imageUrl, "Failed to load album art", exception);
+                if (!(exception instanceof InterruptedException)) {
+                    loadCandidateChain(candidates, nextIndex);
+                }
+            } catch (RuntimeException exception) {
+                markFailure(imageUrl, "Failed to load album art", exception);
+                loadCandidateChain(candidates, nextIndex);
             }
         });
     }

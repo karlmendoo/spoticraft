@@ -372,7 +372,7 @@ public final class YouTubeScreen extends Screen {
 
     public boolean mouseClicked(Click click, boolean doubled) {
         if (click.button() == 0) {
-            for (QueueAction action : this.queueActions) {
+            for (QueueAction action : List.copyOf(this.queueActions)) {
                 if (!action.contains(click.x(), click.y())) {
                     continue;
                 }
@@ -384,14 +384,14 @@ public final class YouTubeScreen extends Screen {
                 }
                 return true;
             }
-            for (ClickableRow row : this.libraryRows) {
-                if (row.contains(click.x(), click.y())) {
+            for (ClickableRow row : List.copyOf(this.libraryRows)) {
+                if (row.contains(click.x(), click.y()) && row.item() != null) {
                     handleItemClick(row.item());
                     return true;
                 }
             }
-            for (ClickableRow row : this.searchRows) {
-                if (row.contains(click.x(), click.y()) && row.item().playable()) {
+            for (ClickableRow row : List.copyOf(this.searchRows)) {
+                if (row.contains(click.x(), click.y()) && row.item() != null && row.item().playable()) {
                     handleItemClick(row.item());
                     return true;
                 }
@@ -419,6 +419,9 @@ public final class YouTubeScreen extends Screen {
     }
 
     private void handleItemClick(LibraryItem item) {
+        if (item == null) {
+            return;
+        }
         if (isQueueModifierDown() && item.playable()) {
             this.service.queue(item);
             return;
