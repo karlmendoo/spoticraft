@@ -173,6 +173,14 @@ public final class SpotifyService {
 
     public void play(LibraryItem item) {
         submit("Starting playback…", () -> {
+            PlaybackSnapshot currentPlayback = this.playback.hasActiveDevice()
+                ? this.playback
+                : this.apiClient.fetchPlayback();
+            applyPlayback(currentPlayback);
+            if (!currentPlayback.hasActiveDevice()) {
+                this.statusMessage = "Open Spotify on your phone, desktop, or web player and start playback once before using SpotiCraft controls.";
+                return;
+            }
             this.apiClient.play(item);
             applyPlayback(this.apiClient.fetchPlayback());
             this.statusMessage = "Queued " + item.title() + ".";

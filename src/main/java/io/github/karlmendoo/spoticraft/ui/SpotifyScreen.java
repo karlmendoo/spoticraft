@@ -25,6 +25,8 @@ import java.util.List;
 
 public final class SpotifyScreen extends Screen {
     private static final int SCREEN_BACKGROUND_DARK_OVERLAY_COLOR = 0xCC0D1117;
+    private static final int HEADER_TITLE_Y = 10;
+    private static final int HEADER_SUBTITLE_Y = 22;
 
     private final SpotifyService service;
     private final AlbumArtCache albumArtCache;
@@ -69,7 +71,7 @@ public final class SpotifyScreen extends Screen {
             .dimensions(202, top + 10, 68, 20)
             .build());
 
-        int controlY = this.height - 78;
+        int controlY = this.height - 106;
         this.addDrawableChild(ButtonWidget.builder(Text.literal("◀◀"), button -> this.service.previousTrack())
             .dimensions(36, controlY, 44, 20)
             .build());
@@ -89,13 +91,13 @@ public final class SpotifyScreen extends Screen {
 
         int tabX = this.width / 3 + 12;
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Playlists"), button -> switchTab(LibraryTab.PLAYLISTS))
-            .dimensions(tabX, 66, 72, 20)
+            .dimensions(tabX, 88, 72, 20)
             .build());
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Liked"), button -> switchTab(LibraryTab.LIKED))
-            .dimensions(tabX + 78, 66, 56, 20)
+            .dimensions(tabX + 78, 88, 56, 20)
             .build());
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Recent"), button -> switchTab(LibraryTab.RECENT))
-            .dimensions(tabX + 140, 66, 60, 20)
+            .dimensions(tabX + 140, 88, 60, 20)
             .build());
 
         if (this.service.config().hasRefreshToken()) {
@@ -140,8 +142,8 @@ public final class SpotifyScreen extends Screen {
         drawPanel(context, centerX, centerY, centerWidth, panelHeight, 0xFF4DA3FF, 0.72F);
         drawPanel(context, rightX, rightY, rightWidth, panelHeight, 0xFFFF7EE3, 0.72F);
 
-        context.drawText(this.textRenderer, Text.literal("SpotiCraft").formatted(Formatting.BOLD), 32, 34, headerColor, false);
-        context.drawText(this.textRenderer, Text.literal("Spotify inside Minecraft, with a polished native flow."), 108, 35, subColor, false);
+        context.drawText(this.textRenderer, Text.literal("SpotiCraft").formatted(Formatting.BOLD), 32, HEADER_TITLE_Y, headerColor, false);
+        context.drawText(this.textRenderer, Text.literal("Spotify inside Minecraft, with a polished native flow."), 32, HEADER_SUBTITLE_Y, subColor, false);
 
         drawCurrentPlayback(context, playback, leftX, leftY, leftWidth, panelHeight);
         drawLibrary(context, library, centerX, centerY, centerWidth, panelHeight, mouseX, mouseY);
@@ -178,7 +180,7 @@ public final class SpotifyScreen extends Screen {
         context.drawText(this.textRenderer, Text.literal(formatMillis(renderedProgress)), progressX, progressY + 10, 0xFFEFF3F7, false);
         context.drawText(this.textRenderer, Text.literal(formatMillis(playback.durationMs())), progressX + progressWidth - 30, progressY + 10, 0xFFEFF3F7, false);
 
-        int hintY = y + height - 76;
+        int hintY = this.height - 168;
         context.drawText(this.textRenderer, Text.literal("Quick keys"), x + 16, hintY, 0xFFAAF1C0, false);
         context.drawText(this.textRenderer, Text.literal("O open · J previous · K play/pause · L next"), x + 16, hintY + 14, 0xFFDAE1EA, false);
         context.drawText(this.textRenderer, Text.literal("Connect flow uses Spotify OAuth in your browser and returns via localhost."), x + 16, hintY + 30, 0xFFBBC4CF, false);
@@ -186,7 +188,6 @@ public final class SpotifyScreen extends Screen {
 
     private void drawLibrary(DrawContext context, LibrarySnapshot library, int x, int y, int width, int height, int mouseX, int mouseY) {
         context.drawText(this.textRenderer, Text.literal("Library").formatted(Formatting.BOLD), x + 16, y + 16, 0xFFFFFFFF, false);
-        context.drawText(this.textRenderer, Text.literal(this.selectedTab.label), x + 16, y + 31, 0xFFB8D8FF, false);
 
         List<LibraryItem> items = switch (this.selectedTab) {
             case PLAYLISTS -> library.playlists();
@@ -231,6 +232,10 @@ public final class SpotifyScreen extends Screen {
     private void drawItemRow(DrawContext context, int x, int y, int width, LibraryItem item, int mouseX, int mouseY, List<ClickableRow> registry) {
         boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 32;
         int background = hovered ? 0x667B8DA3 : 0x44212A34;
+        Text kindText = Text.literal(item.kind().name());
+        int kindWidth = this.textRenderer.getWidth(kindText);
+        int kindX = x + width - 8 - kindWidth;
+        int textWidth = Math.max(1, kindX - (x + 38) - 10);
         context.fill(x, y, x + width, y + 32, background);
         if (hovered) {
             context.fill(x, y, x + 3, y + 32, 0xFF1DB954);
@@ -242,9 +247,9 @@ public final class SpotifyScreen extends Screen {
         } else {
             context.fill(x + 6, y + 4, x + 30, y + 28, 0x55374455);
         }
-        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.title(), width - 86), x + 38, y + 6, 0xFFFFFFFF, false);
-        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.subtitle(), width - 86), x + 38, y + 18, 0xFFC6CED8, false);
-        context.drawText(this.textRenderer, Text.literal(item.kind().name()), x + width - 44, y + 10, item.playable() ? 0xFF98F7B0 : 0xFFFFD479, false);
+        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.title(), textWidth), x + 38, y + 6, 0xFFFFFFFF, false);
+        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.subtitle(), textWidth), x + 38, y + 18, 0xFFC6CED8, false);
+        context.drawText(this.textRenderer, kindText, kindX, y + 10, item.playable() ? 0xFF98F7B0 : 0xFFFFD479, false);
         registry.add(new ClickableRow(x, y, width, 32, item));
     }
 

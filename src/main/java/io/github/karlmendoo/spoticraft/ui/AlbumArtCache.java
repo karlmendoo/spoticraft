@@ -18,7 +18,9 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class AlbumArtCache {
     private final Logger logger;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient = HttpClient.newBuilder()
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
     private final Map<String, Identifier> cache = new ConcurrentHashMap<>();
     private final Set<String> loading = ConcurrentHashMap.newKeySet();
 
@@ -40,6 +42,7 @@ public final class AlbumArtCache {
                 HttpRequest request = HttpRequest.newBuilder(URI.create(imageUrl)).GET().build();
                 HttpResponse<byte[]> response = this.httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
                 if (response.statusCode() / 100 != 2) {
+                    this.logger.debug("Album art request for {} returned status {}", imageUrl, response.statusCode());
                     return;
                 }
                 NativeImage image;
@@ -60,6 +63,7 @@ public final class AlbumArtCache {
                     Thread.currentThread().interrupt();
                 }
                 this.logger.debug("Failed to load album art {}", imageUrl, exception);
+            } finally {
                 this.loading.remove(imageUrl);
             }
         });
