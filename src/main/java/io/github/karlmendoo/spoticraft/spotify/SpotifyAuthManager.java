@@ -2,14 +2,18 @@ package io.github.karlmendoo.spoticraft.spotify;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import io.github.karlmendoo.spoticraft.config.SpotiCraftConfig;
 import org.slf4j.Logger;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -20,7 +24,6 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.Executors;
 
 public final class SpotifyAuthManager {
     private static final String AUTHORIZE_URL = "https://accounts.spotify.com/authorize";
@@ -40,7 +43,8 @@ public final class SpotifyAuthManager {
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final Gson gson = new Gson();
 
-    private HttpServer callbackServer;
+    private ServerSocket callbackServer;
+    private Thread callbackThread;
     private String activeState = "";
 
     public SpotifyAuthManager(SpotiCraftConfig config, Logger logger) {
@@ -90,25 +94,47 @@ public final class SpotifyAuthManager {
         try {
             URI redirectUri = URI.create(this.config.redirectUri);
             int port = redirectUri.getPort() > 0 ? redirectUri.getPort() : 80;
-            String path = redirectUri.getPath() == null || redirectUri.getPath().isBlank() ? "/" : redirectUri.getPath();
-            this.callbackServer = HttpServer.create(new InetSocketAddress(redirectUri.getHost(), port), 0);
-            this.callbackServer.createContext(path, this::handleCallback);
-            this.callbackServer.setExecutor(Executors.newSingleThreadExecutor(runnable -> {
-                Thread thread = new Thread(runnable, "spoticraft-auth-callback");
-                thread.setDaemon(true);
-                return thread;
-            }));
-            this.callbackServer.start();
+            String host = redirectUri.getHost() == null || redirectUri.getHost().isBlank() ? "127.0.0.1" : redirectUri.getHost();
+            String path = callbackPath(redirectUri);
+            this.callbackServer = new ServerSocket();
+            this.callbackServer.bind(new InetSocketAddress(host, port));
+            this.callbackThread = new Thread(() -> acceptCallback(path), "spoticraft-auth-callback");
+            this.callbackThread.setDaemon(true);
+            this.callbackThread.start();
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to start Spotify callback server", exception);
         }
     }
 
-    private void handleCallback(HttpExchange exchange) throws IOException {
+    private void acceptCallback(String expectedPath) {
+        ServerSocket serverSocket;
+        synchronized (this) {
+            serverSocket = this.callbackServer;
+        }
+
+        if (serverSocket == null) {
+            return;
+        }
+
+        try (Socket socket = serverSocket.accept()) {
+            handleCallback(socket, expectedPath);
+        } catch (IOException exception) {
+            if (!isSocketFailure(exception)) {
+                this.logger.error("Spotify callback server failed", exception);
+            }
+        } finally {
+            synchronized (this) {
+                this.callbackServer = null;
+                this.callbackThread = null;
+            }
+        }
+    }
+
+    private void handleCallback(Socket socket, String expectedPath) throws IOException {
         String response;
         int code = 200;
         try {
-            URI requestUri = exchange.getRequestURI();
+            URI requestUri = readRequestUri(socket, expectedPath);
             JsonObject params = parseQuery(requestUri.getRawQuery());
             String receivedState = params.has("state") ? params.get("state").getAsString() : "";
             if (!Objects.equals(receivedState, this.activeState)) {
@@ -134,10 +160,13 @@ public final class SpotifyAuthManager {
         }
 
         byte[] body = response.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
-        exchange.sendResponseHeaders(code, body.length);
-        try (OutputStream outputStream = exchange.getResponseBody()) {
+        try (OutputStream outputStream = socket.getOutputStream()) {
+            outputStream.write(("HTTP/1.1 " + code + (code == 200 ? " OK" : " Internal Server Error") + "\r\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(("Content-Type: text/html; charset=utf-8\r\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(("Content-Length: " + body.length + "\r\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(("Connection: close\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             outputStream.write(body);
+            outputStream.flush();
         }
     }
 
@@ -180,10 +209,72 @@ public final class SpotifyAuthManager {
     }
 
     private void stopCallbackServer() {
-        if (this.callbackServer != null) {
-            this.callbackServer.stop(0);
+        synchronized (this) {
+            ServerSocket serverSocket = this.callbackServer;
+            Thread callbackThread = this.callbackThread;
             this.callbackServer = null;
+            this.callbackThread = null;
+            if (callbackThread != null) {
+                callbackThread.interrupt();
+            }
+            if (serverSocket != null) {
+                try {
+                    serverSocket.close();
+                } catch (IOException exception) {
+                    this.logger.debug("Failed to close Spotify callback server", exception);
+                }
+            }
         }
+    }
+
+    private URI readRequestUri(Socket socket, String expectedPath) throws IOException {
+        String request = readHttpRequest(socket.getInputStream());
+        String[] requestLines = request.split("\r\n");
+        String requestLine = requestLines.length == 0 ? "" : requestLines[0];
+        if (requestLine.isBlank()) {
+            throw new IllegalStateException("Spotify callback request was empty.");
+        }
+
+        String[] requestParts = requestLine.split(" ");
+        if (requestParts.length < 2) {
+            throw new IllegalStateException("Spotify callback request was malformed.");
+        }
+
+        String target = requestParts[1];
+        int queryIndex = target.indexOf('?');
+        String path = queryIndex >= 0 ? target.substring(0, queryIndex) : target;
+        if (!Objects.equals(path, expectedPath)) {
+            throw new IllegalStateException("Unexpected Spotify callback path: " + path);
+        }
+
+        return URI.create("http://localhost" + target);
+    }
+
+    private String readHttpRequest(InputStream inputStream) throws IOException {
+        InputStream bufferedInputStream = inputStream instanceof BufferedInputStream ? inputStream : new BufferedInputStream(inputStream);
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        int previous = -1;
+        int current;
+        int maxBytes = 16 * 1024;
+        while ((current = bufferedInputStream.read()) != -1) {
+            output.write(current);
+            if (output.size() > maxBytes) {
+                throw new IllegalStateException("Spotify callback request headers were too large.");
+            }
+            if (previous == '\r' && current == '\n') {
+                byte[] bytes = output.toByteArray();
+                int length = bytes.length;
+                if (length >= 4
+                    && bytes[length - 4] == '\r'
+                    && bytes[length - 3] == '\n'
+                    && bytes[length - 2] == '\r'
+                    && bytes[length - 1] == '\n') {
+                    return output.toString(StandardCharsets.UTF_8);
+                }
+            }
+            previous = current;
+        }
+        throw new IllegalStateException("Spotify callback request ended before headers completed.");
     }
 
     private static JsonObject parseQuery(String query) {
@@ -202,6 +293,14 @@ public final class SpotifyAuthManager {
 
     private static String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String callbackPath(URI redirectUri) {
+        return redirectUri.getPath() == null || redirectUri.getPath().isBlank() ? "/" : redirectUri.getPath();
+    }
+
+    private static boolean isSocketFailure(IOException exception) {
+        return exception instanceof SocketException;
     }
 
     private JsonObject errorObject(String rawBody) {
