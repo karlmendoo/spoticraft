@@ -25,8 +25,13 @@ import java.util.List;
 
 public final class SpotifyScreen extends Screen {
     private static final int SCREEN_BACKGROUND_DARK_OVERLAY_COLOR = 0xCC0D1117;
+    private static final int HEADER_TEXT_X = 32;
+    private static final int HEADER_SUBTITLE_X = 44;
     private static final int HEADER_TITLE_Y = 10;
     private static final int HEADER_SUBTITLE_Y = 22;
+    private static final int PLAYBACK_HINT_Y = 168;
+    private static final int ITEM_TEXT_X_OFFSET = 38;
+    private static final int ITEM_TEXT_TO_KIND_GAP = 10;
 
     private final SpotifyService service;
     private final AlbumArtCache albumArtCache;
@@ -142,8 +147,8 @@ public final class SpotifyScreen extends Screen {
         drawPanel(context, centerX, centerY, centerWidth, panelHeight, 0xFF4DA3FF, 0.72F);
         drawPanel(context, rightX, rightY, rightWidth, panelHeight, 0xFFFF7EE3, 0.72F);
 
-        context.drawText(this.textRenderer, Text.literal("SpotiCraft").formatted(Formatting.BOLD), 32, HEADER_TITLE_Y, headerColor, false);
-        context.drawText(this.textRenderer, Text.literal("Spotify inside Minecraft, with a polished native flow."), 32, HEADER_SUBTITLE_Y, subColor, false);
+        context.drawText(this.textRenderer, Text.literal("SpotiCraft").formatted(Formatting.BOLD), HEADER_TEXT_X, HEADER_TITLE_Y, headerColor, false);
+        context.drawText(this.textRenderer, Text.literal("Spotify inside Minecraft, with a polished native flow."), HEADER_SUBTITLE_X, HEADER_SUBTITLE_Y, subColor, false);
 
         drawCurrentPlayback(context, playback, leftX, leftY, leftWidth, panelHeight);
         drawLibrary(context, library, centerX, centerY, centerWidth, panelHeight, mouseX, mouseY);
@@ -180,7 +185,7 @@ public final class SpotifyScreen extends Screen {
         context.drawText(this.textRenderer, Text.literal(formatMillis(renderedProgress)), progressX, progressY + 10, 0xFFEFF3F7, false);
         context.drawText(this.textRenderer, Text.literal(formatMillis(playback.durationMs())), progressX + progressWidth - 30, progressY + 10, 0xFFEFF3F7, false);
 
-        int hintY = this.height - 168;
+        int hintY = this.height - PLAYBACK_HINT_Y;
         context.drawText(this.textRenderer, Text.literal("Quick keys"), x + 16, hintY, 0xFFAAF1C0, false);
         context.drawText(this.textRenderer, Text.literal("O open · J previous · K play/pause · L next"), x + 16, hintY + 14, 0xFFDAE1EA, false);
         context.drawText(this.textRenderer, Text.literal("Connect flow uses Spotify OAuth in your browser and returns via localhost."), x + 16, hintY + 30, 0xFFBBC4CF, false);
@@ -235,7 +240,7 @@ public final class SpotifyScreen extends Screen {
         Text kindText = Text.literal(item.kind().name());
         int kindWidth = this.textRenderer.getWidth(kindText);
         int kindX = x + width - 8 - kindWidth;
-        int textWidth = Math.max(1, kindX - (x + 38) - 10);
+        int textWidth = Math.max(1, kindX - (x + ITEM_TEXT_X_OFFSET) - ITEM_TEXT_TO_KIND_GAP);
         context.fill(x, y, x + width, y + 32, background);
         if (hovered) {
             context.fill(x, y, x + 3, y + 32, 0xFF1DB954);
@@ -247,8 +252,8 @@ public final class SpotifyScreen extends Screen {
         } else {
             context.fill(x + 6, y + 4, x + 30, y + 28, 0x55374455);
         }
-        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.title(), textWidth), x + 38, y + 6, 0xFFFFFFFF, false);
-        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.subtitle(), textWidth), x + 38, y + 18, 0xFFC6CED8, false);
+        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.title(), textWidth), x + ITEM_TEXT_X_OFFSET, y + 6, 0xFFFFFFFF, false);
+        context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.subtitle(), textWidth), x + ITEM_TEXT_X_OFFSET, y + 18, 0xFFC6CED8, false);
         context.drawText(this.textRenderer, kindText, kindX, y + 10, item.playable() ? 0xFF98F7B0 : 0xFFFFD479, false);
         registry.add(new ClickableRow(x, y, width, 32, item));
     }

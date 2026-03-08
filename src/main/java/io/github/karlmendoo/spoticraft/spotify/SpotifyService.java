@@ -15,6 +15,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class SpotifyService {
+    private static final String NO_ACTIVE_DEVICE_STATUS_MESSAGE =
+        "Open Spotify on your phone, desktop, or web player and start playback once before using SpotiCraft controls.";
+
     private final SpotiCraftConfig config;
     private final SpotifyAuthManager authManager;
     private final SpotifyApiClient apiClient;
@@ -178,7 +181,7 @@ public final class SpotifyService {
                 : this.apiClient.fetchPlayback();
             applyPlayback(currentPlayback);
             if (!currentPlayback.hasActiveDevice()) {
-                this.statusMessage = "Open Spotify on your phone, desktop, or web player and start playback once before using SpotiCraft controls.";
+                this.statusMessage = NO_ACTIVE_DEVICE_STATUS_MESSAGE;
                 return;
             }
             this.apiClient.play(item);

@@ -43,6 +43,7 @@ public final class AlbumArtCache {
                 HttpResponse<byte[]> response = this.httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
                 if (response.statusCode() / 100 != 2) {
                     this.logger.debug("Album art request for {} returned status {}", imageUrl, response.statusCode());
+                    this.loading.remove(imageUrl);
                     return;
                 }
                 NativeImage image;
@@ -63,7 +64,6 @@ public final class AlbumArtCache {
                     Thread.currentThread().interrupt();
                 }
                 this.logger.debug("Failed to load album art {}", imageUrl, exception);
-            } finally {
                 this.loading.remove(imageUrl);
             }
         });
