@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "spoticraft",
+  "version": "${version}",
+  "name": "SpotiCraft",
+  "description": "A polished in-game YouTube music browser for Minecraft 1.21.11 on Fabric.",
+  "authors": [
+    "Karl Mendoo"
+  ],
+  "contact": {
+    "sources": "https://github.com/karlmendoo/spoticraft"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "accessWidener": "spoticraft.accesswidener",
+  "entrypoints": {
+    "client": [
+      "io.github.karlmendoo.spoticraft.SpotiCraftClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
