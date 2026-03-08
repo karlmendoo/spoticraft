@@ -40,7 +40,8 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     // Wait briefly for decoded frames so the stream can bridge normal network jitter without stalling the source forever.
     private static final long FRAME_PROVISION_TIMEOUT_MS = 250L;
     private static final long BUFFERING_THRESHOLD_MS = 1_500L;
-    private static final long STALL_TIMEOUT_MS = 5_000L;
+    private static final long STALL_TIMEOUT_MS = 10_000L;
+    private static final long BUFFERING_TIMEOUT_MS = 30_000L;
     private static final AudioFormat PCM_FORMAT = new AudioFormat(48000.0F, 16, 2, true, false);
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocateDirect(0);
 
@@ -56,6 +57,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     private volatile PlaybackState playbackState = PlaybackState.IDLE;
     private volatile int renderedPositionMs;
     private volatile long lastFrameAtMs;
+    private volatile long bufferingStartedAtMs;
     private volatile String lastFailureMessage = "";
 
     public LavaPlayerAudioEngine(Logger logger) {
@@ -99,6 +101,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         this.currentReference = reference;
         this.renderedPositionMs = Math.max(0, startPositionMs);
         this.lastFrameAtMs = System.currentTimeMillis();
+        this.bufferingStartedAtMs = System.currentTimeMillis();
         this.lastFailureMessage = "";
         this.playbackState = PlaybackState.BUFFERING;
 
@@ -133,7 +136,11 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         this.renderedPositionMs = currentPositionMs();
         this.playbackState = PlaybackState.PAUSED;
         if (this.source != null) {
-            this.source.pause();
+            try {
+                this.source.pause();
+            } catch (RuntimeException exception) {
+                this.logger.warn("Audio source pause failed.", exception);
+            }
         }
     }
 
@@ -143,9 +150,14 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         }
         this.player.setPaused(false);
         this.lastFrameAtMs = System.currentTimeMillis();
+        this.bufferingStartedAtMs = System.currentTimeMillis();
         this.playbackState = PlaybackState.BUFFERING;
         if (this.source != null) {
-            this.source.resume();
+            try {
+                this.source.resume();
+            } catch (RuntimeException exception) {
+                this.logger.warn("Audio source resume failed.", exception);
+            }
         }
     }
 
@@ -159,9 +171,11 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             int clamped = Math.max(0, positionMs);
             track.setPosition(clamped);
             this.renderedPositionMs = clamped;
-            this.lastFrameAtMs = System.currentTimeMillis();
+            long now = System.currentTimeMillis();
+            this.lastFrameAtMs = now;
             if (!this.player.isPaused()) {
                 this.playbackState = PlaybackState.BUFFERING;
+                this.bufferingStartedAtMs = now;
             }
         }
     }
@@ -175,8 +189,20 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             }
             return;
         }
-        currentSource.setVolume(effectiveGain());
-        currentSource.tick();
+        try {
+            currentSource.setVolume(effectiveGain());
+            currentSource.tick();
+        } catch (RuntimeException exception) {
+            this.logger.warn("Audio source tick failed, stopping playback.", exception);
+            stopInternal(false);
+            if (track != null) {
+                this.playbackState = PlaybackState.BUFFERING;
+                this.bufferingStartedAtMs = System.currentTimeMillis();
+            } else {
+                this.playbackState = PlaybackState.STOPPED;
+            }
+            return;
+        }
         if (track == null) {
             stopInternal(false);
             this.playbackState = PlaybackState.STOPPED;
@@ -186,13 +212,21 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             this.playbackState = PlaybackState.PAUSED;
             return;
         }
-        long silentForMs = System.currentTimeMillis() - this.lastFrameAtMs;
-        if (currentSource.isStopped()) {
+        long now = System.currentTimeMillis();
+        long silentForMs = now - this.lastFrameAtMs;
+        boolean sourceStopped;
+        try {
+            sourceStopped = currentSource.isStopped();
+        } catch (RuntimeException exception) {
+            this.logger.warn("Audio source state query failed.", exception);
+            sourceStopped = true;
+        }
+        if (sourceStopped) {
             if (silentForMs >= STALL_TIMEOUT_MS) {
                 failPlayback("Playback output stopped unexpectedly.");
                 return;
             }
-            this.playbackState = PlaybackState.BUFFERING;
+            enterBuffering(now);
             return;
         }
         if (silentForMs >= STALL_TIMEOUT_MS) {
@@ -200,10 +234,21 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             return;
         }
         if (silentForMs >= BUFFERING_THRESHOLD_MS) {
-            this.playbackState = PlaybackState.BUFFERING;
+            enterBuffering(now);
             return;
         }
         this.playbackState = PlaybackState.PLAYING;
+        this.bufferingStartedAtMs = 0L;
+    }
+
+    private void enterBuffering(long now) {
+        if (this.playbackState != PlaybackState.BUFFERING) {
+            this.bufferingStartedAtMs = now;
+        }
+        this.playbackState = PlaybackState.BUFFERING;
+        if (this.bufferingStartedAtMs > 0L && now - this.bufferingStartedAtMs >= BUFFERING_TIMEOUT_MS) {
+            failPlayback("Buffering timed out after " + (BUFFERING_TIMEOUT_MS / 1000L) + " seconds.");
+        }
     }
 
     public int currentPositionMs() {
@@ -240,7 +285,11 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         this.volumePercent = Math.max(0, Math.min(volumePercent, 100));
         Source currentSource = this.source;
         if (currentSource != null) {
-            currentSource.setVolume(effectiveGain());
+            try {
+                currentSource.setVolume(effectiveGain());
+            } catch (RuntimeException exception) {
+                this.logger.warn("Audio source setVolume failed.", exception);
+            }
         }
     }
 
@@ -303,10 +352,15 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         this.audioStream = null;
         this.currentReference = "";
         this.renderedPositionMs = 0;
+        this.bufferingStartedAtMs = 0L;
 
         if (currentSource != null) {
-            currentSource.stop();
-            currentSource.close();
+            try {
+                currentSource.stop();
+                currentSource.close();
+            } catch (RuntimeException exception) {
+                this.logger.warn("Failed to close audio source during stop.", exception);
+            }
         }
         if (currentStream != null) {
             currentStream.close();
@@ -323,6 +377,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     private synchronized void frameProvided() {
         this.lastFrameAtMs = System.currentTimeMillis();
         this.renderedPositionMs = currentPositionMs();
+        this.bufferingStartedAtMs = 0L;
         if (this.player.getPlayingTrack() != null && !this.player.isPaused()) {
             this.playbackState = PlaybackState.PLAYING;
         }

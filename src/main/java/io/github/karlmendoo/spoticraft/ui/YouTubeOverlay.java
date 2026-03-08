@@ -70,9 +70,11 @@ public final class YouTubeOverlay {
             context.drawText(client.textRenderer, Text.literal("▶"), x + 23, y + 22, 0xFFFFFFFF, false);
         }
 
+        String toastTitle = toast.title() != null ? toast.title() : "";
+        String toastSubtitle = toast.subtitle() != null ? toast.subtitle() : "";
         context.drawText(client.textRenderer, Text.literal("Now Playing"), x + 56, y + 10, 0xFFFFB7B7, false);
-        context.drawText(client.textRenderer, client.textRenderer.trimToWidth(toast.title(), 136), x + 56, y + 24, 0xFFFFFFFF, false);
-        context.drawText(client.textRenderer, client.textRenderer.trimToWidth(toast.subtitle(), 136), x + 56, y + 37, 0xFFB7BEC9, false);
+        context.drawText(client.textRenderer, client.textRenderer.trimToWidth(toastTitle, 136), x + 56, y + 24, 0xFFFFFFFF, false);
+        context.drawText(client.textRenderer, client.textRenderer.trimToWidth(toastSubtitle, 136), x + 56, y + 37, 0xFFB7BEC9, false);
     }
 
     private void renderMiniPlayer(DrawContext context, MinecraftClient client, PlaybackSnapshot playback) {
