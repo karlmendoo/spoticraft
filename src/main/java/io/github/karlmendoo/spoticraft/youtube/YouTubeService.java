@@ -469,7 +469,7 @@ public final class YouTubeService {
 
     private void startCurrentMedia(int offsetMs, String status) throws IOException {
         PlayableMedia enriched = enrichCurrentMedia(this.audioEngine.play(
-            YouTubeApiClient.watchUrl(currentMedia().videoId(), currentMedia().playlistId(), offsetSeconds(offsetMs)),
+            currentMedia().videoId(),
             this.playback.volumePercent(),
             offsetMs
         ));

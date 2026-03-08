@@ -11,8 +11,11 @@ import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrackInfo;
 import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame;
+import dev.lavalink.youtube.clients.AndroidVrWithThumbnail;
+import dev.lavalink.youtube.clients.TvHtml5SimplyWithThumbnail;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
 import dev.lavalink.youtube.clients.MusicWithThumbnail;
+import dev.lavalink.youtube.clients.WebEmbeddedWithThumbnail;
 import dev.lavalink.youtube.clients.WebWithThumbnail;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.sound.AudioStream;
@@ -51,7 +54,14 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     public LavaPlayerAudioEngine(Logger logger) {
         this.logger = logger;
         this.playerManager.getConfiguration().setOutputFormat(StandardAudioDataFormats.COMMON_PCM_S16_LE);
-        this.playerManager.registerSourceManager(new YoutubeAudioSourceManager(true, new MusicWithThumbnail(), new WebWithThumbnail()));
+        this.playerManager.registerSourceManager(new YoutubeAudioSourceManager(
+            true,
+            new MusicWithThumbnail(),
+            new AndroidVrWithThumbnail(),
+            new TvHtml5SimplyWithThumbnail(),
+            new WebEmbeddedWithThumbnail(),
+            new WebWithThumbnail()
+        ));
         this.player = this.playerManager.createPlayer();
         this.player.addListener(new AudioEventAdapter() {
             @Override
