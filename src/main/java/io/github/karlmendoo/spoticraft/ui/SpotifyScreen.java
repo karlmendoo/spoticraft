@@ -24,6 +24,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class SpotifyScreen extends Screen {
+    private static final int SCREEN_BACKGROUND_DARK_OVERLAY_COLOR = 0xCC0D1117;
+
     private final SpotifyService service;
     private final AlbumArtCache albumArtCache;
     private final long openedAtMs = System.currentTimeMillis();
@@ -103,7 +105,7 @@ public final class SpotifyScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, this.width, this.height, 0xCC0D1117);
+        context.fill(0, 0, this.width, this.height, SCREEN_BACKGROUND_DARK_OVERLAY_COLOR);
         this.libraryRows.clear();
         this.searchRows.clear();
 
