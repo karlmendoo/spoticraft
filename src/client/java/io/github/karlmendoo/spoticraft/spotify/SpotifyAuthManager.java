@@ -30,8 +30,8 @@ import com.sun.net.httpserver.HttpServer;
 public class SpotifyAuthManager {
     private static final String AUTH_URL = "https://accounts.spotify.com/authorize";
     private static final String TOKEN_URL = "https://accounts.spotify.com/api/token";
-    private static final String REDIRECT_URI = "http://localhost:25921/callback";
     private static final int CALLBACK_PORT = 25921;
+    private static final String REDIRECT_URI = "http://localhost:" + CALLBACK_PORT + "/callback";
     private static final String SCOPES = String.join(" ",
             "user-read-playback-state",
             "user-modify-playback-state",

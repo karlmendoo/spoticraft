@@ -43,7 +43,7 @@ public class SpotifyPlayer {
      */
     public void startPolling() {
         stopPolling();
-        pollTask = scheduler.scheduleAtFixedRate(this::pollPlaybackState, 0, 2, TimeUnit.SECONDS);
+        pollTask = scheduler.scheduleAtFixedRate(this::pollPlaybackState, 0, 3, TimeUnit.SECONDS);
     }
 
     /**

@@ -173,8 +173,9 @@ public class SpotifySearchScreen extends Screen {
             if (hovered) context.fill(panelX + 10, itemY, endX, itemY + ITEM_HEIGHT, HOVER_COLOR);
 
             context.drawTextWithShadow(this.textRenderer, Text.literal("\u00A7f" + truncate(album.name, 28)), panelX + 14, itemY + 4, TEXT_COLOR);
-            int aw = this.textRenderer.getWidth(album.artist);
-            context.drawTextWithShadow(this.textRenderer, Text.literal("\u00A78" + truncate(album.artist, 18)), endX - aw - 4, itemY + 4, DIM_TEXT);
+            String truncatedArtist = truncate(album.artist, 18);
+            int aw = this.textRenderer.getWidth(truncatedArtist);
+            context.drawTextWithShadow(this.textRenderer, Text.literal("\u00A78" + truncatedArtist), endX - aw - 4, itemY + 4, DIM_TEXT);
         }
     }
 
