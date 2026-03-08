@@ -4,6 +4,7 @@ import io.github.karlmendoo.spoticraft.youtube.YouTubeService;
 import io.github.karlmendoo.spoticraft.youtube.model.LibraryItem;
 import io.github.karlmendoo.spoticraft.youtube.model.LibrarySnapshot;
 import io.github.karlmendoo.spoticraft.youtube.model.PlaybackSnapshot;
+import io.github.karlmendoo.spoticraft.youtube.model.QueueEntry;
 import io.github.karlmendoo.spoticraft.youtube.model.SearchSnapshot;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
@@ -13,11 +14,13 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
 import net.minecraft.util.math.MathHelper;
+import org.lwjgl.glfw.GLFW;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -38,6 +41,7 @@ public final class YouTubeScreen extends Screen {
     private final long openedAtMs = System.currentTimeMillis();
     private final List<ClickableRow> libraryRows = new ArrayList<>();
     private final List<ClickableRow> searchRows = new ArrayList<>();
+    private final List<QueueAction> queueActions = new ArrayList<>();
 
     private TextFieldWidget searchField;
     private VolumeSlider volumeSlider;
@@ -115,12 +119,16 @@ public final class YouTubeScreen extends Screen {
         context.fill(0, 0, this.width, this.height, SCREEN_BACKGROUND_DARK_OVERLAY_COLOR);
         this.libraryRows.clear();
         this.searchRows.clear();
+        this.queueActions.clear();
 
         PlaybackSnapshot playback = this.service.playback();
         SearchSnapshot search = this.service.search();
         LibrarySnapshot library = this.service.library();
 
-        this.playPauseButton.setMessage(Text.literal(playback.isPlaying() ? "Pause" : "Play"));
+        this.playPauseButton.setMessage(Text.literal(switch (playback.state()) {
+            case PLAYING, BUFFERING -> "Pause";
+            default -> "Play";
+        }));
         this.shuffleButton.setMessage(Text.literal(playback.shuffleEnabled() ? "Shuffle: On" : "Shuffle"));
         this.repeatButton.setMessage(Text.literal("Repeat: " + playback.repeatMode().name()));
         this.volumeSlider.sync(playback.volumePercent());
@@ -160,9 +168,16 @@ public final class YouTubeScreen extends Screen {
 
     private void drawCurrentPlayback(DrawContext context, PlaybackSnapshot playback, int x, int y, int width, int height) {
         context.drawText(this.textRenderer, Text.literal("Now Playing").formatted(Formatting.BOLD), x + 16, y + 16, 0xFFFFFFFF, false);
-        context.drawText(this.textRenderer, Text.literal(playback.deviceName()), x + 16, y + 30, 0xFFFFB7B7, false);
+        context.drawText(
+            this.textRenderer,
+            Text.literal(playback.deviceName() + " · " + playback.state().label()),
+            x + 16,
+            y + 30,
+            0xFFFFB7B7,
+            false
+        );
 
-        Identifier art = this.albumArtCache.request(playback.imageUrl());
+        Identifier art = this.albumArtCache.request(playback.imageUrl(), playback.trackId());
         if (art != null) {
             context.drawTexture(RenderPipelines.GUI_TEXTURED, art, x + 16, y + 52, 0, 0, 124, 124, 124, 124);
         } else {
@@ -174,6 +189,14 @@ public final class YouTubeScreen extends Screen {
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(playback.title(), width - 170), textX, y + 60, 0xFFFFFFFF, false);
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(playback.artist(), width - 170), textX, y + 78, 0xFFD2D8E2, false);
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(playback.album(), width - 170), textX, y + 96, 0xFF9CA6B6, false);
+        context.drawText(
+            this.textRenderer,
+            Text.literal("Queue " + Math.max(0, playback.queueIndex() + 1) + "/" + Math.max(0, playback.queueSize())),
+            textX,
+            y + 114,
+            0xFFFFC0C0,
+            false
+        );
 
         int progressX = x + 16;
         int progressY = y + 192;
@@ -184,11 +207,54 @@ public final class YouTubeScreen extends Screen {
         context.fill(progressX, progressY, progressX + filled, progressY + 6, 0xFFFF4343);
         context.drawText(this.textRenderer, Text.literal(formatMillis(renderedProgress)), progressX, progressY + 10, 0xFFEFF3F7, false);
         context.drawText(this.textRenderer, Text.literal(formatMillis(playback.durationMs())), progressX + progressWidth - 30, progressY + 10, 0xFFEFF3F7, false);
+        drawQueue(context, x + 16, progressY + 28, width - 32, Math.max(0, this.height - PLAYBACK_HINT_Y - (progressY + 54)));
 
         int hintY = this.height - PLAYBACK_HINT_Y;
         context.drawText(this.textRenderer, Text.literal("Quick keys"), x + 16, hintY, 0xFFFFC0C0, false);
         context.drawText(this.textRenderer, Text.literal("O open · J previous · K play/pause · L next"), x + 16, hintY + 14, 0xFFDAE1EA, false);
-        context.drawText(this.textRenderer, Text.literal("Connect flow uses Google OAuth and plays audio directly inside Minecraft."), x + 16, hintY + 30, 0xFFBBC4CF, false);
+        context.drawText(this.textRenderer, Text.literal("Click to play · Shift-click a result to add it to the queue."), x + 16, hintY + 30, 0xFFBBC4CF, false);
+    }
+
+    private void drawQueue(DrawContext context, int x, int y, int width, int availableHeight) {
+        List<QueueEntry> queueEntries = this.service.queueEntries();
+        context.drawText(this.textRenderer, Text.literal("Queue").formatted(Formatting.BOLD), x, y, 0xFFFFFFFF, false);
+        if (queueEntries.isEmpty()) {
+            context.drawText(this.textRenderer, Text.literal("Queue up a video to keep music going."), x, y + 16, 0xFFBBC4CF, false);
+            return;
+        }
+        int maxRows = Math.max(1, Math.min(5, availableHeight / 28));
+        int startIndex = 0;
+        for (int index = 0; index < queueEntries.size(); index++) {
+            if (queueEntries.get(index).current()) {
+                startIndex = Math.max(0, Math.min(index, queueEntries.size() - maxRows));
+                break;
+            }
+        }
+        for (int rowIndex = 0; rowIndex < maxRows && startIndex + rowIndex < queueEntries.size(); rowIndex++) {
+            QueueEntry entry = queueEntries.get(startIndex + rowIndex);
+            int rowY = y + 18 + rowIndex * 28;
+            boolean current = entry.current();
+            context.fill(x, rowY, x + width, rowY + 24, current ? 0x66564242 : 0x33212A34);
+            Identifier art = this.albumArtCache.request(entry.imageUrl(), entry.trackId());
+            if (art != null) {
+                context.drawTexture(RenderPipelines.GUI_TEXTURED, art, x + 4, rowY + 4, 0, 0, 16, 16, 16, 16);
+            } else {
+                context.fill(x + 4, rowY + 4, x + 20, rowY + 20, 0x55374455);
+            }
+            context.drawText(this.textRenderer, Text.literal((entry.index() + 1) + "."), x + 24, rowY + 8, 0xFFFFC0C0, false);
+            context.drawText(this.textRenderer, this.textRenderer.trimToWidth(entry.title(), Math.max(1, width - 110)), x + 40, rowY + 4, 0xFFFFFFFF, false);
+            context.drawText(this.textRenderer, this.textRenderer.trimToWidth(entry.artist(), Math.max(1, width - 110)), x + 40, rowY + 14, 0xFFB7BEC9, false);
+            int actionX = x + width - 34;
+            drawQueueAction(context, actionX, rowY + 4, "▲", entry.index(), QueueActionType.UP);
+            drawQueueAction(context, actionX + 10, rowY + 4, "▼", entry.index(), QueueActionType.DOWN);
+            drawQueueAction(context, actionX + 20, rowY + 4, "✕", entry.index(), QueueActionType.REMOVE);
+            this.queueActions.add(new QueueAction(x, rowY, width - 36, 24, entry.index(), QueueActionType.PLAY));
+        }
+    }
+
+    private void drawQueueAction(DrawContext context, int x, int y, String label, int queueIndex, QueueActionType actionType) {
+        context.drawText(this.textRenderer, Text.literal(label), x, y, 0xFFFFC0C0, false);
+        this.queueActions.add(new QueueAction(x - 1, y - 1, 10, 10, queueIndex, actionType));
     }
 
     private void drawLibrary(DrawContext context, LibrarySnapshot library, int x, int y, int width, int height, int mouseX, int mouseY) {
@@ -246,7 +312,7 @@ public final class YouTubeScreen extends Screen {
             context.fill(x, y, x + 3, y + 32, 0xFFFF4343);
         }
 
-        Identifier art = this.albumArtCache.request(item.imageUrl());
+        Identifier art = this.albumArtCache.request(item.imageUrl(), item.kind() == LibraryItem.Kind.TRACK ? item.id() : "");
         if (art != null) {
             context.drawTexture(RenderPipelines.GUI_TEXTURED, art, x + 6, y + 4, 0, 0, 24, 24, 24, 24);
         } else {
@@ -310,15 +376,35 @@ public final class YouTubeScreen extends Screen {
 
     public boolean mouseClicked(Click click, boolean doubled) {
         if (click.button() == 0) {
+            for (QueueAction action : this.queueActions) {
+                if (!action.contains(click.x(), click.y())) {
+                    continue;
+                }
+                switch (action.actionType()) {
+                    case PLAY -> this.service.playQueueIndex(action.queueIndex());
+                    case UP -> this.service.moveQueueItem(action.queueIndex(), Math.max(0, action.queueIndex() - 1));
+                    case DOWN -> this.service.moveQueueItem(action.queueIndex(), Math.min(this.service.queueEntries().size() - 1, action.queueIndex() + 1));
+                    case REMOVE -> this.service.removeQueueItem(action.queueIndex());
+                }
+                return true;
+            }
             for (ClickableRow row : this.libraryRows) {
                 if (row.contains(click.x(), click.y())) {
-                    this.service.play(row.item());
+                    if (isQueueModifierDown() && row.item().playable()) {
+                        this.service.queue(row.item());
+                    } else {
+                        this.service.play(row.item());
+                    }
                     return true;
                 }
             }
             for (ClickableRow row : this.searchRows) {
                 if (row.contains(click.x(), click.y()) && row.item().playable()) {
-                    this.service.play(row.item());
+                    if (isQueueModifierDown()) {
+                        this.service.queue(row.item());
+                    } else {
+                        this.service.play(row.item());
+                    }
                     return true;
                 }
             }
@@ -338,6 +424,12 @@ public final class YouTubeScreen extends Screen {
         return minutes + ":" + String.format("%02d", seconds);
     }
 
+    private static boolean isQueueModifierDown() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        return InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
+            || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
+    }
+
     private enum LibraryTab {
         PLAYLISTS("Playlists"),
         LIKED("Liked Videos"),
@@ -354,6 +446,19 @@ public final class YouTubeScreen extends Screen {
         private boolean contains(double mouseX, double mouseY) {
             return mouseX >= this.x && mouseX <= this.x + this.width && mouseY >= this.y && mouseY <= this.y + this.height;
         }
+    }
+
+    private record QueueAction(int x, int y, int width, int height, int queueIndex, QueueActionType actionType) {
+        private boolean contains(double mouseX, double mouseY) {
+            return mouseX >= this.x && mouseX <= this.x + this.width && mouseY >= this.y && mouseY <= this.y + this.height;
+        }
+    }
+
+    private enum QueueActionType {
+        PLAY,
+        UP,
+        DOWN,
+        REMOVE
     }
 
     private final class VolumeSlider extends SliderWidget {

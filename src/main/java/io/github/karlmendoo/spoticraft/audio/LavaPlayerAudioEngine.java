@@ -186,12 +186,15 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             this.playbackState = PlaybackState.PAUSED;
             return;
         }
+        long silentForMs = System.currentTimeMillis() - this.lastFrameAtMs;
         if (currentSource.isStopped()) {
-            failPlayback("Playback output stopped unexpectedly.");
+            if (silentForMs >= STALL_TIMEOUT_MS) {
+                failPlayback("Playback output stopped unexpectedly.");
+                return;
+            }
+            this.playbackState = PlaybackState.BUFFERING;
             return;
         }
-
-        long silentForMs = System.currentTimeMillis() - this.lastFrameAtMs;
         if (silentForMs >= STALL_TIMEOUT_MS) {
             failPlayback("Playback stalled while streaming audio.");
             return;
@@ -309,7 +312,9 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             currentStream.close();
         }
         this.player.stopTrack();
-        this.playbackState = PlaybackState.STOPPED;
+        if (this.playbackState != PlaybackState.ERROR) {
+            this.playbackState = PlaybackState.STOPPED;
+        }
         if (notifyListener) {
             this.listener.onTrackEnded(AudioTrackEndReason.STOPPED);
         }
@@ -378,11 +383,11 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
                 boolean provided = this.player.provide(this.mutableFrame, FRAME_PROVISION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 if (!provided) {
                     frameUnavailable();
-                    return EMPTY_BUFFER.duplicate();
+                    return silenceBuffer(size);
                 }
             } catch (TimeoutException exception) {
                 frameUnavailable();
-                return EMPTY_BUFFER.duplicate();
+                return silenceBuffer(size);
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Interrupted while streaming audio frame.", exception);
@@ -390,10 +395,10 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             buffer.flip();
             if (buffer.hasRemaining()) {
                 frameProvided();
-            } else {
-                frameUnavailable();
+                return buffer;
             }
-            return buffer;
+            frameUnavailable();
+            return silenceBuffer(size);
         }
 
         @Override
@@ -419,6 +424,13 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
 
     private static String nonBlankOrEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private static ByteBuffer silenceBuffer(int size) {
+        ByteBuffer silence = ByteBuffer.allocateDirect(size);
+        silence.position(size);
+        silence.flip();
+        return silence;
     }
 
     public interface Listener {

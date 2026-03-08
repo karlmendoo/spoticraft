@@ -75,6 +75,10 @@ public final class YouTubeService {
             public void onTrackException(String message) {
                 executor.submit(() -> {
                     errorMessage = message == null ? "Playback failed." : message;
+                    if (moveToNext("Skipped to the next queued video after a playback failure.")) {
+                        errorMessage = "";
+                        return;
+                    }
                     statusMessage = "In-game playback failed.";
                     if (!playback.trackId().isBlank()) {
                         PlaybackSnapshot snapshot = playback;

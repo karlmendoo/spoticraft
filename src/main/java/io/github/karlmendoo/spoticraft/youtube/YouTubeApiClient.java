@@ -383,7 +383,7 @@ public final class YouTubeApiClient {
 
     private static String thumbnailUrl(JsonObject snippet) {
         JsonObject thumbnails = object(snippet, "thumbnails");
-        for (String size : List.of("high", "medium", "default")) {
+        for (String size : List.of("maxres", "standard", "high", "medium", "default")) {
             JsonObject image = object(thumbnails, size);
             String url = string(image, "url");
             if (!url.isBlank()) {
