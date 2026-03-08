@@ -8,6 +8,7 @@ public record PlaybackSnapshot(
     String album,
     String imageUrl,
     boolean isPlaying,
+    PlaybackState state,
     int progressMs,
     int durationMs,
     int volumePercent,
@@ -15,7 +16,9 @@ public record PlaybackSnapshot(
     RepeatMode repeatMode,
     String deviceName,
     String deviceId,
-    boolean hasActiveDevice
+    boolean hasActiveDevice,
+    int queueIndex,
+    int queueSize
 ) {
     public static PlaybackSnapshot empty() {
         return new PlaybackSnapshot(
@@ -26,6 +29,7 @@ public record PlaybackSnapshot(
             "",
             "",
             false,
+            PlaybackState.IDLE,
             0,
             1,
             70,
@@ -33,7 +37,9 @@ public record PlaybackSnapshot(
             RepeatMode.OFF,
             "In-game player",
             "",
-            false
+            false,
+            -1,
+            0
         );
     }
 }

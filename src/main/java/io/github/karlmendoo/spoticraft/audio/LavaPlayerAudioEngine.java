@@ -21,6 +21,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.sound.AudioStream;
 import net.minecraft.client.sound.Source;
 import net.minecraft.sound.SoundCategory;
+import io.github.karlmendoo.spoticraft.youtube.model.PlaybackState;
 import org.slf4j.Logger;
 
 import javax.sound.sampled.AudioFormat;
@@ -38,6 +39,8 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     private static final int MIN_FRAME_BUFFER_SIZE = 2048;
     // Wait briefly for decoded frames so the stream can bridge normal network jitter without stalling the source forever.
     private static final long FRAME_PROVISION_TIMEOUT_MS = 250L;
+    private static final long BUFFERING_THRESHOLD_MS = 1_500L;
+    private static final long STALL_TIMEOUT_MS = 5_000L;
     private static final AudioFormat PCM_FORMAT = new AudioFormat(48000.0F, 16, 2, true, false);
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocateDirect(0);
 
@@ -50,6 +53,10 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     private volatile LavaPlayerAudioStream audioStream;
     private volatile int volumePercent = 70;
     private volatile String currentReference = "";
+    private volatile PlaybackState playbackState = PlaybackState.IDLE;
+    private volatile int renderedPositionMs;
+    private volatile long lastFrameAtMs;
+    private volatile String lastFailureMessage = "";
 
     public LavaPlayerAudioEngine(Logger logger) {
         this.logger = logger;
@@ -90,6 +97,10 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         stopInternal(false);
         this.volumePercent = volumePercent;
         this.currentReference = reference;
+        this.renderedPositionMs = Math.max(0, startPositionMs);
+        this.lastFrameAtMs = System.currentTimeMillis();
+        this.lastFailureMessage = "";
+        this.playbackState = PlaybackState.BUFFERING;
 
         if (!this.player.startTrack(track, false)) {
             throw new IOException("Failed to start LavaPlayer track.");
@@ -119,6 +130,8 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             return;
         }
         this.player.setPaused(true);
+        this.renderedPositionMs = currentPositionMs();
+        this.playbackState = PlaybackState.PAUSED;
         if (this.source != null) {
             this.source.pause();
         }
@@ -129,6 +142,8 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             return;
         }
         this.player.setPaused(false);
+        this.lastFrameAtMs = System.currentTimeMillis();
+        this.playbackState = PlaybackState.BUFFERING;
         if (this.source != null) {
             this.source.resume();
         }
@@ -141,20 +156,51 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     public synchronized void seekTo(int positionMs) {
         AudioTrack track = this.player.getPlayingTrack();
         if (track != null && track.isSeekable()) {
-            track.setPosition(Math.max(0, positionMs));
+            int clamped = Math.max(0, positionMs);
+            track.setPosition(clamped);
+            this.renderedPositionMs = clamped;
+            this.lastFrameAtMs = System.currentTimeMillis();
+            if (!this.player.isPaused()) {
+                this.playbackState = PlaybackState.BUFFERING;
+            }
         }
     }
 
     public void tick() {
         Source currentSource = this.source;
+        AudioTrack track = this.player.getPlayingTrack();
         if (currentSource == null) {
+            if (track == null && this.playbackState == PlaybackState.PLAYING) {
+                this.playbackState = PlaybackState.STOPPED;
+            }
             return;
         }
         currentSource.setVolume(effectiveGain());
         currentSource.tick();
-        if (currentSource.isStopped() && this.player.getPlayingTrack() == null) {
+        if (track == null) {
             stopInternal(false);
+            this.playbackState = PlaybackState.STOPPED;
+            return;
         }
+        if (this.player.isPaused()) {
+            this.playbackState = PlaybackState.PAUSED;
+            return;
+        }
+        if (currentSource.isStopped()) {
+            failPlayback("Playback output stopped unexpectedly.");
+            return;
+        }
+
+        long silentForMs = System.currentTimeMillis() - this.lastFrameAtMs;
+        if (silentForMs >= STALL_TIMEOUT_MS) {
+            failPlayback("Playback stalled while streaming audio.");
+            return;
+        }
+        if (silentForMs >= BUFFERING_THRESHOLD_MS) {
+            this.playbackState = PlaybackState.BUFFERING;
+            return;
+        }
+        this.playbackState = PlaybackState.PLAYING;
     }
 
     public int currentPositionMs() {
@@ -172,7 +218,19 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     }
 
     public boolean isPlaying() {
-        return hasTrack() && !this.player.isPaused();
+        return this.playbackState == PlaybackState.PLAYING;
+    }
+
+    public PlaybackState playbackState() {
+        return this.playbackState;
+    }
+
+    public int renderedPositionMs() {
+        return hasTrack() ? this.renderedPositionMs : 0;
+    }
+
+    public String lastFailureMessage() {
+        return this.lastFailureMessage;
     }
 
     public void setVolume(int volumePercent) {
@@ -241,6 +299,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         LavaPlayerAudioStream currentStream = this.audioStream;
         this.audioStream = null;
         this.currentReference = "";
+        this.renderedPositionMs = 0;
 
         if (currentSource != null) {
             currentSource.stop();
@@ -250,9 +309,31 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             currentStream.close();
         }
         this.player.stopTrack();
+        this.playbackState = PlaybackState.STOPPED;
         if (notifyListener) {
             this.listener.onTrackEnded(AudioTrackEndReason.STOPPED);
         }
+    }
+
+    private synchronized void frameProvided() {
+        this.lastFrameAtMs = System.currentTimeMillis();
+        this.renderedPositionMs = currentPositionMs();
+        if (this.player.getPlayingTrack() != null && !this.player.isPaused()) {
+            this.playbackState = PlaybackState.PLAYING;
+        }
+    }
+
+    private synchronized void frameUnavailable() {
+        if (this.player.getPlayingTrack() != null && !this.player.isPaused() && this.playbackState != PlaybackState.ERROR) {
+            this.playbackState = PlaybackState.BUFFERING;
+        }
+    }
+
+    private void failPlayback(String message) {
+        this.lastFailureMessage = message;
+        this.playbackState = PlaybackState.ERROR;
+        stopInternal(false);
+        this.listener.onTrackException(message);
     }
 
     private float effectiveGain() {
@@ -270,7 +351,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         }
     }
 
-    private static final class LavaPlayerAudioStream implements AudioStream {
+    private final class LavaPlayerAudioStream implements AudioStream {
         private final AudioPlayer player;
         private final MutableAudioFrame mutableFrame = new MutableAudioFrame();
         private volatile boolean closed;
@@ -296,15 +377,22 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             try {
                 boolean provided = this.player.provide(this.mutableFrame, FRAME_PROVISION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 if (!provided) {
+                    frameUnavailable();
                     return EMPTY_BUFFER.duplicate();
                 }
             } catch (TimeoutException exception) {
+                frameUnavailable();
                 return EMPTY_BUFFER.duplicate();
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Interrupted while streaming audio frame.", exception);
             }
             buffer.flip();
+            if (buffer.hasRemaining()) {
+                frameProvided();
+            } else {
+                frameUnavailable();
+            }
             return buffer;
         }
 

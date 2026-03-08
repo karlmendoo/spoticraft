@@ -9,6 +9,8 @@ import io.github.karlmendoo.spoticraft.youtube.YouTubeApiClient.ResolvedPlayback
 import io.github.karlmendoo.spoticraft.youtube.model.LibraryItem;
 import io.github.karlmendoo.spoticraft.youtube.model.LibrarySnapshot;
 import io.github.karlmendoo.spoticraft.youtube.model.PlaybackSnapshot;
+import io.github.karlmendoo.spoticraft.youtube.model.PlaybackState;
+import io.github.karlmendoo.spoticraft.youtube.model.QueueEntry;
 import io.github.karlmendoo.spoticraft.youtube.model.RepeatMode;
 import io.github.karlmendoo.spoticraft.youtube.model.SearchSnapshot;
 import io.github.karlmendoo.spoticraft.youtube.model.ToastMessage;
@@ -74,7 +76,29 @@ public final class YouTubeService {
                 executor.submit(() -> {
                     errorMessage = message == null ? "Playback failed." : message;
                     statusMessage = "In-game playback failed.";
-                    syncPlaybackSnapshot();
+                    if (!playback.trackId().isBlank()) {
+                        PlaybackSnapshot snapshot = playback;
+                        playback = new PlaybackSnapshot(
+                            snapshot.trackId(),
+                            snapshot.trackUri(),
+                            snapshot.title(),
+                            snapshot.artist(),
+                            snapshot.album(),
+                            snapshot.imageUrl(),
+                            false,
+                            PlaybackState.ERROR,
+                            renderedProgressMs(),
+                            snapshot.durationMs(),
+                            snapshot.volumePercent(),
+                            snapshot.shuffleEnabled(),
+                            snapshot.repeatMode(),
+                            snapshot.deviceName(),
+                            snapshot.deviceId(),
+                            snapshot.hasActiveDevice(),
+                            snapshot.queueIndex(),
+                            snapshot.queueSize()
+                        );
+                    }
                 });
             }
         });
@@ -124,6 +148,7 @@ public final class YouTubeService {
 
     public void tick() {
         this.audioEngine.tick();
+        syncPlaybackSnapshot();
     }
 
     public void shutdown() {
@@ -140,7 +165,25 @@ public final class YouTubeService {
     }
 
     public int renderedProgressMs() {
-        return this.audioEngine.hasTrack() ? this.audioEngine.currentPositionMs() : this.playback.progressMs();
+        return this.audioEngine.hasTrack() ? this.audioEngine.renderedPositionMs() : this.playback.progressMs();
+    }
+
+    public List<QueueEntry> queueEntries() {
+        List<PlayableMedia> items = this.queue;
+        List<QueueEntry> entries = new ArrayList<>(items.size());
+        for (int index = 0; index < items.size(); index++) {
+            PlayableMedia media = items.get(index);
+            entries.add(new QueueEntry(
+                index,
+                media.videoId(),
+                media.title(),
+                media.creator(),
+                media.imageUrl(),
+                media.durationMs(),
+                index == this.queueIndex
+            ));
+        }
+        return entries;
     }
 
     public void refreshAll() {
@@ -203,6 +246,7 @@ public final class YouTubeService {
     public void nextTrack() {
         submit("Skipping track…", () -> {
             if (!moveToNext("Playing next YouTube video.")) {
+                this.audioEngine.stop();
                 this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
             }
         });
@@ -239,6 +283,7 @@ public final class YouTubeService {
                 snapshot.album(),
                 snapshot.imageUrl(),
                 snapshot.isPlaying(),
+                snapshot.state(),
                 renderedProgressMs(),
                 snapshot.durationMs(),
                 snapshot.volumePercent(),
@@ -246,7 +291,9 @@ public final class YouTubeService {
                 snapshot.repeatMode(),
                 snapshot.deviceName(),
                 snapshot.deviceId(),
-                snapshot.hasActiveDevice()
+                snapshot.hasActiveDevice(),
+                snapshot.queueIndex(),
+                snapshot.queueSize()
             );
             this.statusMessage = this.playback.shuffleEnabled() ? "Shuffle enabled for the local queue." : "Shuffle disabled.";
         });
@@ -264,6 +311,7 @@ public final class YouTubeService {
                 snapshot.album(),
                 snapshot.imageUrl(),
                 snapshot.isPlaying(),
+                snapshot.state(),
                 renderedProgressMs(),
                 snapshot.durationMs(),
                 snapshot.volumePercent(),
@@ -271,7 +319,9 @@ public final class YouTubeService {
                 nextMode,
                 snapshot.deviceName(),
                 snapshot.deviceId(),
-                snapshot.hasActiveDevice()
+                snapshot.hasActiveDevice(),
+                snapshot.queueIndex(),
+                snapshot.queueSize()
             );
             this.statusMessage = "Repeat mode set to " + nextMode.name() + '.';
         });
@@ -290,6 +340,7 @@ public final class YouTubeService {
                 snapshot.album(),
                 snapshot.imageUrl(),
                 snapshot.isPlaying(),
+                snapshot.state(),
                 renderedProgressMs(),
                 snapshot.durationMs(),
                 clamped,
@@ -297,7 +348,9 @@ public final class YouTubeService {
                 snapshot.repeatMode(),
                 snapshot.deviceName(),
                 snapshot.deviceId(),
-                snapshot.hasActiveDevice()
+                snapshot.hasActiveDevice(),
+                snapshot.queueIndex(),
+                snapshot.queueSize()
             );
             this.statusMessage = "Volume set to " + clamped + "% for the in-game session.";
         });
@@ -312,6 +365,93 @@ public final class YouTubeService {
             this.queue = List.copyOf(resolvedPlayback.items());
             this.queueIndex = Math.max(0, Math.min(resolvedPlayback.startIndex(), this.queue.size() - 1));
             startCurrentMedia(0, "Playing in Minecraft with LavaPlayer.");
+        });
+    }
+
+    public void queue(LibraryItem item) {
+        submit("Adding to queue…", () -> {
+            ResolvedPlayback resolvedPlayback = this.apiClient.resolvePlayback(item);
+            if (resolvedPlayback.items().isEmpty()) {
+                throw new YouTubeApiException(404, "No playable YouTube videos were found for that selection.");
+            }
+
+            int insertionIndex = this.queue.size();
+            List<PlayableMedia> updatedQueue = new ArrayList<>(this.queue);
+            updatedQueue.addAll(resolvedPlayback.items());
+            this.queue = List.copyOf(updatedQueue);
+            if (this.queueIndex < 0) {
+                this.queueIndex = Math.max(0, Math.min(insertionIndex + resolvedPlayback.startIndex(), this.queue.size() - 1));
+                startCurrentMedia(0, "Playing queued YouTube video.");
+                return;
+            }
+            syncPlaybackSnapshot();
+            this.statusMessage = resolvedPlayback.items().size() == 1
+                ? "Added 1 video to the queue."
+                : "Added " + resolvedPlayback.items().size() + " videos to the queue.";
+        });
+    }
+
+    public void playQueueIndex(int index) {
+        submit("Starting queued track…", () -> {
+            if (index < 0 || index >= this.queue.size()) {
+                return;
+            }
+            this.queueIndex = index;
+            startCurrentMedia(0, "Playing queued YouTube video.");
+        });
+    }
+
+    public void removeQueueItem(int index) {
+        submit("Removing from queue…", () -> {
+            if (index < 0 || index >= this.queue.size()) {
+                return;
+            }
+            List<PlayableMedia> updatedQueue = new ArrayList<>(this.queue);
+            boolean removedCurrent = index == this.queueIndex;
+            updatedQueue.remove(index);
+            this.queue = List.copyOf(updatedQueue);
+
+            if (this.queue.isEmpty()) {
+                this.queueIndex = -1;
+                this.audioEngine.stop();
+                this.playback = PlaybackSnapshot.empty();
+                this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
+                return;
+            }
+
+            if (index < this.queueIndex) {
+                this.queueIndex--;
+            } else if (removedCurrent) {
+                this.queueIndex = Math.min(index, this.queue.size() - 1);
+                startCurrentMedia(0, "Playing next queued YouTube video.");
+                return;
+            }
+
+            syncPlaybackSnapshot();
+            this.statusMessage = "Removed video from the queue.";
+        });
+    }
+
+    public void moveQueueItem(int fromIndex, int toIndex) {
+        submit("Reordering queue…", () -> {
+            if (fromIndex < 0 || fromIndex >= this.queue.size() || toIndex < 0 || toIndex >= this.queue.size() || fromIndex == toIndex) {
+                return;
+            }
+            List<PlayableMedia> updatedQueue = new ArrayList<>(this.queue);
+            PlayableMedia moved = updatedQueue.remove(fromIndex);
+            updatedQueue.add(toIndex, moved);
+            this.queue = List.copyOf(updatedQueue);
+
+            if (this.queueIndex == fromIndex) {
+                this.queueIndex = toIndex;
+            } else if (fromIndex < this.queueIndex && toIndex >= this.queueIndex) {
+                this.queueIndex--;
+            } else if (fromIndex > this.queueIndex && toIndex <= this.queueIndex) {
+                this.queueIndex++;
+            }
+
+            syncPlaybackSnapshot();
+            this.statusMessage = "Updated queue order.";
         });
     }
 
@@ -365,6 +505,7 @@ public final class YouTubeService {
                 this.playback.album(),
                 this.playback.imageUrl(),
                 false,
+                endReason == AudioTrackEndReason.LOAD_FAILED ? PlaybackState.ERROR : PlaybackState.STOPPED,
                 this.playback.durationMs(),
                 this.playback.durationMs(),
                 this.playback.volumePercent(),
@@ -372,7 +513,9 @@ public final class YouTubeService {
                 this.playback.repeatMode(),
                 this.playback.deviceName(),
                 this.playback.deviceId(),
-                true
+                true,
+                this.playback.queueIndex(),
+                this.playback.queueSize()
             );
         }
         this.statusMessage = endReason == AudioTrackEndReason.LOAD_FAILED
@@ -391,6 +534,7 @@ public final class YouTubeService {
                     this.playback.album(),
                     this.playback.imageUrl(),
                     false,
+                    this.playback.state() == PlaybackState.ERROR ? PlaybackState.ERROR : PlaybackState.STOPPED,
                     this.playback.progressMs(),
                     this.playback.durationMs(),
                     this.playback.volumePercent(),
@@ -398,12 +542,14 @@ public final class YouTubeService {
                     this.playback.repeatMode(),
                     "In-game player",
                     this.playback.deviceId(),
-                    !this.playback.trackId().isBlank()
+                    !this.playback.trackId().isBlank(),
+                    this.queueIndex,
+                    this.queue.size()
                 );
             }
             return;
         }
-        applyPlayback(snapshotFor(currentMedia(), this.audioEngine.isPlaying(), this.audioEngine.currentPositionMs()));
+        applyPlayback(snapshotFor(currentMedia(), this.audioEngine.playbackState(), this.audioEngine.renderedPositionMs()));
     }
 
     private boolean moveToNext(String status) {
@@ -474,7 +620,7 @@ public final class YouTubeService {
             offsetMs
         ));
         replaceCurrentMedia(enriched);
-        applyPlayback(snapshotFor(enriched, true, this.audioEngine.currentPositionMs()));
+        applyPlayback(snapshotFor(enriched, this.audioEngine.playbackState(), this.audioEngine.renderedPositionMs()));
         rememberCurrentMedia();
         this.statusMessage = status;
     }
@@ -505,7 +651,7 @@ public final class YouTubeService {
         return this.queue.get(this.queueIndex);
     }
 
-    private PlaybackSnapshot snapshotFor(PlayableMedia media, boolean isPlaying, int progressMs) {
+    private PlaybackSnapshot snapshotFor(PlayableMedia media, PlaybackState playbackState, int progressMs) {
         PlaybackSnapshot snapshot = this.playback;
         return new PlaybackSnapshot(
             media.videoId(),
@@ -514,7 +660,8 @@ public final class YouTubeService {
             media.creator(),
             media.collectionTitle(),
             media.imageUrl(),
-            isPlaying,
+            playbackState == PlaybackState.PLAYING,
+            playbackState,
             Math.max(0, Math.min(progressMs, media.durationMs())),
             Math.max(1, media.durationMs()),
             snapshot.volumePercent(),
@@ -522,7 +669,9 @@ public final class YouTubeService {
             snapshot.repeatMode(),
             "In-game player",
             media.videoId(),
-            true
+            true,
+            this.queueIndex,
+            this.queue.size()
         );
     }
 
