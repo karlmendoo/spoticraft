@@ -1,12 +1,12 @@
 # 🎵 SpotiCraft
 
-SpotiCraft is a Fabric mod for **Minecraft 1.21.11** that keeps the existing in-game music UI and now powers it with **YouTube**. You can connect a Google account, browse your YouTube playlists and liked videos, search the catalog, launch playback in the browser, and keep the same polished in-game player flow without tabbing through menus.
+SpotiCraft is a Fabric mod for **Minecraft 1.21.11** that keeps the existing in-game music UI and now powers it with **YouTube** plus **LavaPlayer** for real in-game audio playback. You can connect a Google account, browse your YouTube playlists and liked videos, search the catalog, and keep the same polished in-game player flow without tabbing through menus.
 
 ## Features
 
 - Google / YouTube account connection with OAuth in the browser
 - In-game playback controls: play, pause, previous, next, shuffle, repeat
-- Current media panel with title, creator, collection, thumbnail, progress, browser session, and volume slider
+- Current media panel with title, creator, collection, thumbnail, progress, in-game player status, and volume slider
 - Library browsing for playlists, liked videos, and recently played items
 - Search for videos, channels, playlists, and collection-style playlists
 - Media-change HUD toast with thumbnail artwork
@@ -40,7 +40,7 @@ SpotiCraft is a Fabric mod for **Minecraft 1.21.11** that keeps the existing in-
 
 6. Launch the game, open SpotiCraft with **O**, then click **Connect**.
 7. Approve the Google / YouTube permissions in your browser and return to Minecraft.
-8. Choose a video or playlist in-game; SpotiCraft opens the matching YouTube playback URL in your browser and keeps the queue/progress state in Minecraft.
+8. Choose a video or playlist in-game; SpotiCraft resolves the stream with LavaPlayer and plays the audio directly inside Minecraft.
 
 ## Authentication flow
 
@@ -55,8 +55,8 @@ SpotiCraft uses Google's **OAuth 2.0 installed application** flow.
 ## Playback model
 
 - YouTube metadata, playlists, liked videos, search results, thumbnails, and durations come from the YouTube Data API.
-- Playback starts by opening the selected video or playlist in the system browser.
-- SpotiCraft keeps the queue, progress, repeat, shuffle, and overlay state inside Minecraft so the current UI flow remains intact.
+- Playback is decoded and streamed directly inside Minecraft using LavaPlayer.
+- SpotiCraft keeps the queue, progress, repeat, shuffle, overlay state, and thumbnail artwork in sync with the in-game audio player so the current UI flow remains intact.
 
 ## Building
 

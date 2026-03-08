@@ -188,7 +188,7 @@ public final class YouTubeScreen extends Screen {
         int hintY = this.height - PLAYBACK_HINT_Y;
         context.drawText(this.textRenderer, Text.literal("Quick keys"), x + 16, hintY, 0xFFFFC0C0, false);
         context.drawText(this.textRenderer, Text.literal("O open · J previous · K play/pause · L next"), x + 16, hintY + 14, 0xFFDAE1EA, false);
-        context.drawText(this.textRenderer, Text.literal("Connect flow uses Google OAuth, then opens YouTube in your browser when playback starts."), x + 16, hintY + 30, 0xFFBBC4CF, false);
+        context.drawText(this.textRenderer, Text.literal("Connect flow uses Google OAuth and plays audio directly inside Minecraft."), x + 16, hintY + 30, 0xFFBBC4CF, false);
     }
 
     private void drawLibrary(DrawContext context, LibrarySnapshot library, int x, int y, int width, int height, int mouseX, int mouseY) {

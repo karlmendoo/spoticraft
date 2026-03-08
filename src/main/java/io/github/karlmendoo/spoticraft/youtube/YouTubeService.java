@@ -1,5 +1,8 @@
 package io.github.karlmendoo.spoticraft.youtube;
 
+import com.sedmelluq.discord.lavaplayer.track.AudioTrackEndReason;
+import io.github.karlmendoo.spoticraft.audio.LavaPlayerAudioEngine;
+import io.github.karlmendoo.spoticraft.audio.LavaPlayerAudioEngine.LoadedTrack;
 import io.github.karlmendoo.spoticraft.config.SpotiCraftConfig;
 import io.github.karlmendoo.spoticraft.youtube.YouTubeApiClient.PlayableMedia;
 import io.github.karlmendoo.spoticraft.youtube.YouTubeApiClient.ResolvedPlayback;
@@ -9,23 +12,27 @@ import io.github.karlmendoo.spoticraft.youtube.model.PlaybackSnapshot;
 import io.github.karlmendoo.spoticraft.youtube.model.RepeatMode;
 import io.github.karlmendoo.spoticraft.youtube.model.SearchSnapshot;
 import io.github.karlmendoo.spoticraft.youtube.model.ToastMessage;
-import net.minecraft.util.Util;
 import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class YouTubeService {
+    // Accept any positive duration coming from either the YouTube Data API or LavaPlayer metadata and only fall back
+    // when the resolved value is missing or non-positive.
+    private static final int MIN_VALID_DURATION_MS = 1;
     private static final String EMPTY_QUEUE_STATUS_MESSAGE =
-        "Search YouTube or choose a playlist to open playback in your browser.";
+        "Search YouTube or choose a playlist to start in-game playback.";
 
     private final SpotiCraftConfig config;
     private final YouTubeAuthManager authManager;
     private final YouTubeApiClient apiClient;
+    private final LavaPlayerAudioEngine audioEngine;
     private final Logger logger;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "spoticraft-worker");
@@ -40,16 +47,37 @@ public final class YouTubeService {
     private volatile String errorMessage = "";
     private volatile boolean busy;
     private volatile ToastMessage toastMessage;
-    private volatile long playbackUpdatedAtMs;
     private volatile List<PlayableMedia> queue = List.of();
     private volatile int queueIndex = -1;
 
-    public YouTubeService(SpotiCraftConfig config, YouTubeAuthManager authManager, YouTubeApiClient apiClient, Logger logger) {
+    public YouTubeService(
+        SpotiCraftConfig config,
+        YouTubeAuthManager authManager,
+        YouTubeApiClient apiClient,
+        LavaPlayerAudioEngine audioEngine,
+        Logger logger
+    ) {
         this.config = config;
         this.authManager = authManager;
         this.apiClient = apiClient;
+        this.audioEngine = audioEngine;
         this.logger = logger;
         this.library = new LibrarySnapshot(List.of(), List.of(), this.config.recentLibraryItems());
+        this.audioEngine.setListener(new LavaPlayerAudioEngine.Listener() {
+            @Override
+            public void onTrackEnded(AudioTrackEndReason endReason) {
+                executor.submit(() -> handleTrackEnded(endReason));
+            }
+
+            @Override
+            public void onTrackException(String message) {
+                executor.submit(() -> {
+                    errorMessage = message == null ? "Playback failed." : message;
+                    statusMessage = "In-game playback failed.";
+                    syncPlaybackSnapshot();
+                });
+            }
+        });
         if (config.hasRefreshToken() || config.hasAccessToken()) {
             this.statusMessage = "Saved YouTube session found. Refresh to sync your library.";
         }
@@ -94,6 +122,15 @@ public final class YouTubeService {
         return uri;
     }
 
+    public void tick() {
+        this.audioEngine.tick();
+    }
+
+    public void shutdown() {
+        this.audioEngine.close();
+        this.executor.shutdownNow();
+    }
+
     public void clearToast() {
         this.toastMessage = null;
     }
@@ -103,18 +140,13 @@ public final class YouTubeService {
     }
 
     public int renderedProgressMs() {
-        PlaybackSnapshot snapshot = this.playback;
-        if (!snapshot.isPlaying()) {
-            return snapshot.progressMs();
-        }
-        long elapsed = Math.max(0L, System.currentTimeMillis() - this.playbackUpdatedAtMs);
-        return (int) Math.min(snapshot.durationMs(), snapshot.progressMs() + elapsed);
+        return this.audioEngine.hasTrack() ? this.audioEngine.currentPositionMs() : this.playback.progressMs();
     }
 
     public void refreshAll() {
         submit("Refreshing YouTube data…", () -> {
-            refreshLocalPlaybackState();
             this.library = this.apiClient.fetchLibrary(this.config.recentLibraryItems());
+            syncPlaybackSnapshot();
             this.statusMessage = (this.config.hasRefreshToken() || this.config.hasAccessToken())
                 ? "Connected to YouTube and ready to browse."
                 : "Connect YouTube to browse your library.";
@@ -123,8 +155,8 @@ public final class YouTubeService {
 
     public void refreshPlayback() {
         submit("Syncing playback…", () -> {
-            refreshLocalPlaybackState();
-            if (!this.playback.hasActiveDevice()) {
+            syncPlaybackSnapshot();
+            if (!this.audioEngine.hasTrack()) {
                 this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
             }
         });
@@ -144,24 +176,33 @@ public final class YouTubeService {
 
     public void togglePlayPause() {
         submit("Updating playback…", () -> {
-            if (!this.playback.hasActiveDevice()) {
+            if (!this.audioEngine.hasTrack()) {
                 this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
                 return;
             }
-            if (this.playback.isPlaying()) {
-                applyPlayback(snapshotFor(currentMedia(), false, renderedProgressMs()));
-                this.statusMessage = "Paused in SpotiCraft. Pause the browser tab as needed.";
+            if (this.audioEngine.isPlaying()) {
+                this.audioEngine.pause();
+                syncPlaybackSnapshot();
+                this.statusMessage = "Paused in-game playback.";
                 return;
             }
-            applyPlayback(snapshotFor(currentMedia(), true, this.playback.progressMs()));
-            openCurrentMedia(this.playback.progressMs());
-            this.statusMessage = "Resumed YouTube playback in your browser.";
+            this.audioEngine.resume();
+            syncPlaybackSnapshot();
+            this.statusMessage = "Resumed in-game playback.";
+        });
+    }
+
+    public void stopPlayback() {
+        submit("Stopping playback…", () -> {
+            this.audioEngine.stop();
+            syncPlaybackSnapshot();
+            this.statusMessage = "Stopped in-game playback.";
         });
     }
 
     public void nextTrack() {
         submit("Skipping track…", () -> {
-            if (!moveToNext()) {
+            if (!moveToNext("Playing next YouTube video.")) {
                 this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
             }
         });
@@ -169,19 +210,19 @@ public final class YouTubeService {
 
     public void previousTrack() {
         submit("Rewinding track…", () -> {
-            if (!this.playback.hasActiveDevice()) {
+            if (!this.audioEngine.hasTrack()) {
                 this.statusMessage = EMPTY_QUEUE_STATUS_MESSAGE;
                 return;
             }
             if (renderedProgressMs() > 3000) {
-                applyPlayback(snapshotFor(currentMedia(), this.playback.isPlaying(), 0));
-                openCurrentMedia(0);
+                this.audioEngine.seekTo(0);
+                syncPlaybackSnapshot();
                 this.statusMessage = "Restarted current video.";
                 return;
             }
             if (!moveToPrevious()) {
-                applyPlayback(snapshotFor(currentMedia(), this.playback.isPlaying(), 0));
-                openCurrentMedia(0);
+                this.audioEngine.seekTo(0);
+                syncPlaybackSnapshot();
                 this.statusMessage = "Restarted current video.";
             }
         });
@@ -207,7 +248,6 @@ public final class YouTubeService {
                 snapshot.deviceId(),
                 snapshot.hasActiveDevice()
             );
-            this.playbackUpdatedAtMs = System.currentTimeMillis();
             this.statusMessage = this.playback.shuffleEnabled() ? "Shuffle enabled for the local queue." : "Shuffle disabled.";
         });
     }
@@ -233,13 +273,14 @@ public final class YouTubeService {
                 snapshot.deviceId(),
                 snapshot.hasActiveDevice()
             );
-            this.playbackUpdatedAtMs = System.currentTimeMillis();
             this.statusMessage = "Repeat mode set to " + nextMode.name() + '.';
         });
     }
 
     public void setVolume(int volumePercent) {
         submit("Adjusting volume…", () -> {
+            int clamped = Math.max(0, Math.min(volumePercent, 100));
+            this.audioEngine.setVolume(clamped);
             PlaybackSnapshot snapshot = this.playback;
             this.playback = new PlaybackSnapshot(
                 snapshot.trackId(),
@@ -251,15 +292,14 @@ public final class YouTubeService {
                 snapshot.isPlaying(),
                 renderedProgressMs(),
                 snapshot.durationMs(),
-                volumePercent,
+                clamped,
                 snapshot.shuffleEnabled(),
                 snapshot.repeatMode(),
                 snapshot.deviceName(),
                 snapshot.deviceId(),
                 snapshot.hasActiveDevice()
             );
-            this.playbackUpdatedAtMs = System.currentTimeMillis();
-            this.statusMessage = "Volume set to " + volumePercent + "% for the in-game session.";
+            this.statusMessage = "Volume set to " + clamped + "% for the in-game session.";
         });
     }
 
@@ -271,10 +311,7 @@ public final class YouTubeService {
             }
             this.queue = List.copyOf(resolvedPlayback.items());
             this.queueIndex = Math.max(0, Math.min(resolvedPlayback.startIndex(), this.queue.size() - 1));
-            applyPlayback(snapshotFor(currentMedia(), true, 0));
-            rememberCurrentMedia();
-            openCurrentMedia(0);
-            this.statusMessage = "Opened \"" + this.playback.title() + "\" on YouTube in your browser.";
+            startCurrentMedia(0, "Playing in Minecraft with LavaPlayer.");
         });
     }
 
@@ -310,21 +347,66 @@ public final class YouTubeService {
         this.errorMessage = exception.getMessage();
     }
 
-    private void refreshLocalPlaybackState() {
-        if (!this.playback.hasActiveDevice() || !this.playback.isPlaying()) {
+    private void handleTrackEnded(AudioTrackEndReason endReason) {
+        if (endReason == AudioTrackEndReason.REPLACED || endReason == AudioTrackEndReason.STOPPED) {
+            syncPlaybackSnapshot();
             return;
         }
-        if (renderedProgressMs() < this.playback.durationMs()) {
-            this.playback = snapshotFor(currentMedia(), true, renderedProgressMs());
-            this.playbackUpdatedAtMs = System.currentTimeMillis();
+        if (endReason.mayStartNext && moveToNext("Playing next YouTube video.")) {
             return;
         }
-        if (!moveToNext()) {
-            applyPlayback(snapshotFor(currentMedia(), false, this.playback.durationMs()));
+        syncPlaybackSnapshot();
+        if (this.playback.hasActiveDevice()) {
+            this.playback = new PlaybackSnapshot(
+                this.playback.trackId(),
+                this.playback.trackUri(),
+                this.playback.title(),
+                this.playback.artist(),
+                this.playback.album(),
+                this.playback.imageUrl(),
+                false,
+                this.playback.durationMs(),
+                this.playback.durationMs(),
+                this.playback.volumePercent(),
+                this.playback.shuffleEnabled(),
+                this.playback.repeatMode(),
+                this.playback.deviceName(),
+                this.playback.deviceId(),
+                true
+            );
         }
+        this.statusMessage = endReason == AudioTrackEndReason.LOAD_FAILED
+            ? "Playback ended because the audio stream failed."
+            : "Playback finished.";
     }
 
-    private boolean moveToNext() {
+    private void syncPlaybackSnapshot() {
+        if (!this.audioEngine.hasTrack() || this.queue.isEmpty() || this.queueIndex < 0 || this.queueIndex >= this.queue.size()) {
+            if (!this.audioEngine.hasTrack()) {
+                this.playback = new PlaybackSnapshot(
+                    this.playback.trackId(),
+                    this.playback.trackUri(),
+                    this.playback.title(),
+                    this.playback.artist(),
+                    this.playback.album(),
+                    this.playback.imageUrl(),
+                    false,
+                    this.playback.progressMs(),
+                    this.playback.durationMs(),
+                    this.playback.volumePercent(),
+                    this.playback.shuffleEnabled(),
+                    this.playback.repeatMode(),
+                    "In-game player",
+                    this.playback.deviceId(),
+                    !this.playback.trackId().isBlank()
+                );
+            }
+            return;
+        }
+        applyPlayback(snapshotFor(currentMedia(), this.audioEngine.isPlaying(), this.audioEngine.currentPositionMs()));
+    }
+
+    private boolean moveToNext(String status) {
         if (this.queue.isEmpty()) {
             return false;
         }
@@ -333,11 +415,14 @@ public final class YouTubeService {
             return false;
         }
         this.queueIndex = nextIndex;
-        applyPlayback(snapshotFor(currentMedia(), true, 0));
-        rememberCurrentMedia();
-        openCurrentMedia(0);
-        this.statusMessage = "Playing next YouTube video.";
-        return true;
+        try {
+            startCurrentMedia(0, status);
+            return true;
+        } catch (IOException exception) {
+            this.logger.error("Failed to start next track", exception);
+            this.errorMessage = "Failed to start next track: " + exception.getMessage();
+            return false;
+        }
     }
 
     private boolean moveToPrevious() {
@@ -345,11 +430,14 @@ public final class YouTubeService {
             return false;
         }
         this.queueIndex--;
-        applyPlayback(snapshotFor(currentMedia(), true, 0));
-        rememberCurrentMedia();
-        openCurrentMedia(0);
-        this.statusMessage = "Playing previous YouTube video.";
-        return true;
+        try {
+            startCurrentMedia(0, "Playing previous YouTube video.");
+            return true;
+        } catch (IOException exception) {
+            this.logger.error("Failed to start previous track", exception);
+            this.errorMessage = "Failed to start previous track: " + exception.getMessage();
+            return false;
+        }
     }
 
     private int nextIndex() {
@@ -379,9 +467,35 @@ public final class YouTubeService {
         this.library = new LibrarySnapshot(this.library.playlists(), this.library.likedTracks(), this.config.recentLibraryItems());
     }
 
-    private void openCurrentMedia(int offsetMs) {
+    private void startCurrentMedia(int offsetMs, String status) throws IOException {
+        PlayableMedia enriched = enrichCurrentMedia(this.audioEngine.play(
+            YouTubeApiClient.watchUrl(currentMedia().videoId(), currentMedia().playlistId(), offsetSeconds(offsetMs)),
+            this.playback.volumePercent(),
+            offsetMs
+        ));
+        replaceCurrentMedia(enriched);
+        applyPlayback(snapshotFor(enriched, true, this.audioEngine.currentPositionMs()));
+        rememberCurrentMedia();
+        this.statusMessage = status;
+    }
+
+    private PlayableMedia enrichCurrentMedia(LoadedTrack loadedTrack) {
         PlayableMedia media = currentMedia();
-        Util.getOperatingSystem().open(URI.create(YouTubeApiClient.watchUrl(media.videoId(), media.playlistId(), Math.max(0, offsetMs / 1000))));
+        return new PlayableMedia(
+            media.videoId(),
+            media.playlistId(),
+            preferPrimary(loadedTrack.title(), media.title()),
+            preferPrimary(loadedTrack.author(), media.creator()),
+            media.collectionTitle(),
+            preferPrimary(loadedTrack.artworkUrl(), media.imageUrl()),
+            loadedTrack.durationMs() > MIN_VALID_DURATION_MS ? loadedTrack.durationMs() : media.durationMs()
+        );
+    }
+
+    private void replaceCurrentMedia(PlayableMedia media) {
+        List<PlayableMedia> updatedQueue = new ArrayList<>(this.queue);
+        updatedQueue.set(this.queueIndex, media);
+        this.queue = List.copyOf(updatedQueue);
     }
 
     private PlayableMedia currentMedia() {
@@ -395,18 +509,18 @@ public final class YouTubeService {
         PlaybackSnapshot snapshot = this.playback;
         return new PlaybackSnapshot(
             media.videoId(),
-            YouTubeApiClient.watchUrl(media.videoId(), media.playlistId(), Math.max(0, progressMs / 1000)),
+            YouTubeApiClient.watchUrl(media.videoId(), media.playlistId(), offsetSeconds(progressMs)),
             media.title(),
             media.creator(),
             media.collectionTitle(),
             media.imageUrl(),
             isPlaying,
             Math.max(0, Math.min(progressMs, media.durationMs())),
-            media.durationMs(),
+            Math.max(1, media.durationMs()),
             snapshot.volumePercent(),
             snapshot.shuffleEnabled(),
             snapshot.repeatMode(),
-            "Browser playback",
+            "In-game player",
             media.videoId(),
             true
         );
@@ -415,10 +529,17 @@ public final class YouTubeService {
     private void applyPlayback(PlaybackSnapshot snapshot) {
         PlaybackSnapshot previous = this.playback;
         this.playback = snapshot;
-        this.playbackUpdatedAtMs = System.currentTimeMillis();
         if (!snapshot.trackId().isBlank() && !snapshot.trackId().equals(previous.trackId())) {
             this.toastMessage = new ToastMessage(snapshot.title(), snapshot.artist(), snapshot.imageUrl(), System.currentTimeMillis(), 4500L);
         }
+    }
+
+    private static String preferPrimary(String primary, String fallback) {
+        return primary == null || primary.isBlank() ? fallback : primary;
+    }
+
+    private static int offsetSeconds(int offsetMs) {
+        return Math.max(0, offsetMs / 1000);
     }
 
     @FunctionalInterface

@@ -31,7 +31,7 @@ public record PlaybackSnapshot(
             70,
             false,
             RepeatMode.OFF,
-            "Browser playback",
+            "In-game player",
             "",
             false
         );

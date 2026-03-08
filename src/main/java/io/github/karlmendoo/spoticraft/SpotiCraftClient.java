@@ -1,5 +1,6 @@
 package io.github.karlmendoo.spoticraft;
 
+import io.github.karlmendoo.spoticraft.audio.LavaPlayerAudioEngine;
 import io.github.karlmendoo.spoticraft.config.SpotiCraftConfig;
 import io.github.karlmendoo.spoticraft.ui.AlbumArtCache;
 import io.github.karlmendoo.spoticraft.ui.YouTubeOverlay;
@@ -8,6 +9,7 @@ import io.github.karlmendoo.spoticraft.youtube.YouTubeApiClient;
 import io.github.karlmendoo.spoticraft.youtube.YouTubeAuthManager;
 import io.github.karlmendoo.spoticraft.youtube.YouTubeService;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
@@ -35,7 +37,8 @@ public final class SpotiCraftClient implements ClientModInitializer {
         SpotiCraftConfig config = SpotiCraftConfig.load(LOGGER);
         YouTubeAuthManager authManager = new YouTubeAuthManager(config, LOGGER);
         YouTubeApiClient apiClient = new YouTubeApiClient(authManager, LOGGER);
-        this.youtubeService = new YouTubeService(config, authManager, apiClient, LOGGER);
+        LavaPlayerAudioEngine audioEngine = new LavaPlayerAudioEngine(LOGGER);
+        this.youtubeService = new YouTubeService(config, authManager, apiClient, audioEngine, LOGGER);
         this.albumArtCache = new AlbumArtCache(LOGGER);
 
         this.openKey = registerKey("open", GLFW.GLFW_KEY_O);
@@ -44,6 +47,7 @@ public final class SpotiCraftClient implements ClientModInitializer {
         this.previousKey = registerKey("previous", GLFW.GLFW_KEY_J);
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onEndTick);
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> this.youtubeService.shutdown());
         HudRenderCallback.EVENT.register(new YouTubeOverlay(this.youtubeService, this.albumArtCache)::render);
     }
 
@@ -57,6 +61,7 @@ public final class SpotiCraftClient implements ClientModInitializer {
     }
 
     private void onEndTick(MinecraftClient client) {
+        this.youtubeService.tick();
         while (this.openKey.wasPressed()) {
             client.setScreen(new YouTubeScreen(this.youtubeService, this.albumArtCache));
         }
