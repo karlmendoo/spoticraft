@@ -75,7 +75,7 @@ public final class YouTubeService {
             public void onTrackException(String message) {
                 executor.submit(() -> {
                     errorMessage = message == null ? "Playback failed." : message;
-                    if (moveToNext("Skipped to the next queued video after a playback failure.")) {
+                    if (moveToNext("Skipped to the next queued track after a playback failure.")) {
                         errorMessage = "";
                         return;
                     }

@@ -189,14 +189,10 @@ public final class YouTubeScreen extends Screen {
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(playback.title(), width - 170), textX, y + 60, 0xFFFFFFFF, false);
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(playback.artist(), width - 170), textX, y + 78, 0xFFD2D8E2, false);
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(playback.album(), width - 170), textX, y + 96, 0xFF9CA6B6, false);
-        context.drawText(
-            this.textRenderer,
-            Text.literal("Queue " + Math.max(0, playback.queueIndex() + 1) + "/" + Math.max(0, playback.queueSize())),
-            textX,
-            y + 114,
-            0xFFFFC0C0,
-            false
-        );
+        String queueSummary = playback.queueSize() > 0
+            ? "Queue " + (playback.queueIndex() + 1) + "/" + playback.queueSize()
+            : "Queue empty";
+        context.drawText(this.textRenderer, Text.literal(queueSummary), textX, y + 114, 0xFFFFC0C0, false);
 
         int progressX = x + 16;
         int progressY = y + 192;
@@ -219,7 +215,7 @@ public final class YouTubeScreen extends Screen {
         List<QueueEntry> queueEntries = this.service.queueEntries();
         context.drawText(this.textRenderer, Text.literal("Queue").formatted(Formatting.BOLD), x, y, 0xFFFFFFFF, false);
         if (queueEntries.isEmpty()) {
-            context.drawText(this.textRenderer, Text.literal("Queue up a video to keep music going."), x, y + 16, 0xFFBBC4CF, false);
+            context.drawText(this.textRenderer, Text.literal("Queue up a track to keep music going."), x, y + 16, 0xFFBBC4CF, false);
             return;
         }
         int maxRows = Math.max(1, Math.min(5, availableHeight / 28));
@@ -390,21 +386,13 @@ public final class YouTubeScreen extends Screen {
             }
             for (ClickableRow row : this.libraryRows) {
                 if (row.contains(click.x(), click.y())) {
-                    if (isQueueModifierDown() && row.item().playable()) {
-                        this.service.queue(row.item());
-                    } else {
-                        this.service.play(row.item());
-                    }
+                    handleItemClick(row.item());
                     return true;
                 }
             }
             for (ClickableRow row : this.searchRows) {
                 if (row.contains(click.x(), click.y()) && row.item().playable()) {
-                    if (isQueueModifierDown()) {
-                        this.service.queue(row.item());
-                    } else {
-                        this.service.play(row.item());
-                    }
+                    handleItemClick(row.item());
                     return true;
                 }
             }
@@ -428,6 +416,14 @@ public final class YouTubeScreen extends Screen {
         MinecraftClient client = MinecraftClient.getInstance();
         return InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
             || InputUtil.isKeyPressed(client.getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT);
+    }
+
+    private void handleItemClick(LibraryItem item) {
+        if (isQueueModifierDown() && item.playable()) {
+            this.service.queue(item);
+            return;
+        }
+        this.service.play(item);
     }
 
     private enum LibraryTab {

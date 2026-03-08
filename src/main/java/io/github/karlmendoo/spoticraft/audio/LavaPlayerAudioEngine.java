@@ -360,6 +360,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         private final AudioPlayer player;
         private final MutableAudioFrame mutableFrame = new MutableAudioFrame();
         private volatile boolean closed;
+        private ByteBuffer silenceBuffer = ByteBuffer.allocateDirect(MIN_FRAME_BUFFER_SIZE);
 
         private LavaPlayerAudioStream(AudioPlayer player) {
             this.player = player;
@@ -405,6 +406,16 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         public void close() {
             this.closed = true;
         }
+
+        private synchronized ByteBuffer silenceBuffer(int size) {
+            if (this.silenceBuffer.capacity() < size) {
+                this.silenceBuffer = ByteBuffer.allocateDirect(size);
+            }
+            this.silenceBuffer.clear();
+            this.silenceBuffer.position(size);
+            this.silenceBuffer.flip();
+            return this.silenceBuffer.duplicate();
+        }
     }
 
     private static AudioTrack selectTrack(AudioPlaylist playlist) {
@@ -424,13 +435,6 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
 
     private static String nonBlankOrEmpty(String value) {
         return value == null ? "" : value;
-    }
-
-    private static ByteBuffer silenceBuffer(int size) {
-        ByteBuffer silence = ByteBuffer.allocateDirect(size);
-        silence.position(size);
-        silence.flip();
-        return silence;
     }
 
     public interface Listener {

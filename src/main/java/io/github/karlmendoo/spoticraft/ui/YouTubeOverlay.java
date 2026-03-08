@@ -12,6 +12,11 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
 public final class YouTubeOverlay {
+    private static final int MINI_PLAYER_MARGIN = 16;
+    private static final int MINI_PLAYER_WIDTH = 222;
+    private static final int MINI_PLAYER_HEIGHT = 64;
+    private static final int TOAST_Y_OFFSET = MINI_PLAYER_HEIGHT + 80;
+
     private final YouTubeService service;
     private final AlbumArtCache albumArtCache;
 
@@ -50,8 +55,8 @@ public final class YouTubeOverlay {
         int height = client.getWindow().getScaledHeight();
         float progress = 1.0F - (float) (now - toast.createdAtMs()) / toast.durationMs();
         int cardWidth = 210;
-        int x = width - cardWidth - 16;
-        int y = height - 144 - (int) (MathHelper.clamp(progress, 0.0F, 1.0F) * 8.0F);
+        int x = width - cardWidth - MINI_PLAYER_MARGIN;
+        int y = height - TOAST_Y_OFFSET - (int) (MathHelper.clamp(progress, 0.0F, 1.0F) * 8.0F);
         int alpha = MathHelper.clamp(this.service.config().overlayOpacity, 0, 255);
         int background = alpha << 24 | 0x101114;
         context.fill(x, y, x + cardWidth, y + 56, background);
@@ -73,10 +78,10 @@ public final class YouTubeOverlay {
     private void renderMiniPlayer(DrawContext context, MinecraftClient client, PlaybackSnapshot playback) {
         int width = client.getWindow().getScaledWidth();
         int height = client.getWindow().getScaledHeight();
-        int cardWidth = 222;
-        int cardHeight = 64;
-        int x = width - cardWidth - 16;
-        int y = height - cardHeight - 16;
+        int cardWidth = MINI_PLAYER_WIDTH;
+        int cardHeight = MINI_PLAYER_HEIGHT;
+        int x = width - cardWidth - MINI_PLAYER_MARGIN;
+        int y = height - cardHeight - MINI_PLAYER_MARGIN;
         int alpha = MathHelper.clamp(this.service.config().overlayOpacity, 0, 255);
         int background = alpha << 24 | 0x101114;
         context.fill(x, y, x + cardWidth, y + cardHeight, background);
