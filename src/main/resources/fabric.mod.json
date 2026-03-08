@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "environment": "client",
+  "accessWidener": "spoticraft.accesswidener",
   "entrypoints": {
     "client": [
       "io.github.karlmendoo.spoticraft.SpotiCraftClient"

@@ -10,6 +10,10 @@ base {
     archivesName = project.archives_base_name
 }
 
+loom {
+    accessWidenerPath = file('src/main/resources/spoticraft.accesswidener')
+}
+
 repositories {
     mavenCentral()
     maven {
@@ -22,8 +26,23 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-    implementation "dev.arbjerg:lavaplayer:2.2.6"
-    implementation "dev.lavalink.youtube:v2:1.18.0"
+    implementation(include("dev.arbjerg:lavaplayer:2.2.6"))
+    include("dev.arbjerg:lavaplayer-natives:2.2.6")
+    include("dev.arbjerg:lava-common:2.2.6")
+    implementation(include("dev.lavalink.youtube:v2:1.18.0"))
+    include("dev.lavalink.youtube:common:1.18.0")
+    include("org.mozilla:rhino-engine:1.7.15")
+    include("org.mozilla:rhino:1.7.15")
+    include("org.jsoup:jsoup:1.16.1")
+    include("net.iharder:base64:2.3.9")
+    include("org.json:json:20240303")
+    include("com.fasterxml.jackson.core:jackson-annotations:2.15.2")
+    include("com.fasterxml.jackson.core:jackson-core:2.15.2")
+    include("com.fasterxml.jackson.core:jackson-databind:2.15.2")
+    include("com.grack:nanojson:1.7")
+    include("org.apache.httpcomponents:httpclient:4.5.14")
+    include("org.apache.httpcomponents:httpcore:4.4.16")
+    include("commons-logging:commons-logging:1.2")
 }
 
 processResources {

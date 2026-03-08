@@ -22,9 +22,6 @@ import org.slf4j.Logger;
 
 import javax.sound.sampled.AudioFormat;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -38,7 +35,6 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     private static final int MIN_FRAME_BUFFER_SIZE = 2048;
     // Wait briefly for decoded frames so the stream can bridge normal network jitter without stalling the source forever.
     private static final long FRAME_PROVISION_TIMEOUT_MS = 250L;
-    private static final Method SOURCE_CREATE_METHOD = resolveSourceCreateMethod();
     private static final AudioFormat PCM_FORMAT = new AudioFormat(48000.0F, 16, 2, true, false);
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocateDirect(0);
 
@@ -256,75 +252,12 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         return Math.max(0.0F, Math.min(1.0F, configuredGain));
     }
 
-    private static Method resolveSourceCreateMethod() {
-        try {
-            Method method = Source.class.getDeclaredMethod("create");
-            method.setAccessible(true);
-            return method;
-        } catch (ReflectiveOperationException exception) {
-            throw new IllegalStateException("Failed to access Minecraft audio source factory.", exception);
-        }
-    }
-
     private Source createSource() throws IOException {
         try {
-            return (Source) SOURCE_CREATE_METHOD.invoke(null);
-        } catch (IllegalAccessException | InvocationTargetException exception) {
+            return Source.create();
+        } catch (RuntimeException exception) {
             throw new IOException("Failed to create Minecraft audio source.", exception);
         }
-    }
-
-    private static AudioTrack selectTrack(AudioPlaylist playlist) {
-        AudioTrack selected = playlist.getSelectedTrack();
-        if (selected != null) {
-            return selected;
-        }
-        return playlist.getTracks().isEmpty() ? null : playlist.getTracks().get(0);
-    }
-
-    public interface Listener {
-        Listener NO_OP = new Listener() {
-            @Override
-            public void onTrackEnded(AudioTrackEndReason endReason) {
-            }
-
-            @Override
-            public void onTrackException(String message) {
-            }
-        };
-
-        void onTrackEnded(AudioTrackEndReason endReason);
-
-        void onTrackException(String message);
-    }
-
-    public record LoadedTrack(
-        String title,
-        String author,
-        int durationMs,
-        String uri,
-        String artworkUrl
-    ) {
-        private static LoadedTrack from(AudioTrackInfo info, String reference) {
-            return new LoadedTrack(
-                nonBlankOrEmpty(info.title),
-                nonBlankOrEmpty(info.author),
-                normalizeDuration(info.length),
-                nonBlankOrEmpty(info.uri).isBlank() ? reference : info.uri,
-                nonBlankOrEmpty(info.artworkUrl)
-            );
-        }
-    }
-
-    private static int normalizeDuration(long durationMs) {
-        if (durationMs <= 0L || durationMs > Integer.MAX_VALUE) {
-            return 1;
-        }
-        return (int) durationMs;
-    }
-
-    private static String nonBlankOrEmpty(String value) {
-        return value == null ? "" : value;
     }
 
     private static final class LavaPlayerAudioStream implements AudioStream {
@@ -368,6 +301,59 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
         @Override
         public void close() {
             this.closed = true;
+        }
+    }
+
+    private static AudioTrack selectTrack(AudioPlaylist playlist) {
+        AudioTrack selected = playlist.getSelectedTrack();
+        if (selected != null) {
+            return selected;
+        }
+        return playlist.getTracks().isEmpty() ? null : playlist.getTracks().get(0);
+    }
+
+    private static int normalizeDuration(long durationMs) {
+        if (durationMs <= 0L || durationMs > Integer.MAX_VALUE) {
+            return 1;
+        }
+        return (int) durationMs;
+    }
+
+    private static String nonBlankOrEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    public interface Listener {
+        Listener NO_OP = new Listener() {
+            @Override
+            public void onTrackEnded(AudioTrackEndReason endReason) {
+            }
+
+            @Override
+            public void onTrackException(String message) {
+            }
+        };
+
+        void onTrackEnded(AudioTrackEndReason endReason);
+
+        void onTrackException(String message);
+    }
+
+    public record LoadedTrack(
+        String title,
+        String author,
+        int durationMs,
+        String uri,
+        String artworkUrl
+    ) {
+        private static LoadedTrack from(AudioTrackInfo info, String reference) {
+            return new LoadedTrack(
+                nonBlankOrEmpty(info.title),
+                nonBlankOrEmpty(info.author),
+                normalizeDuration(info.length),
+                nonBlankOrEmpty(info.uri).isBlank() ? reference : info.uri,
+                nonBlankOrEmpty(info.artworkUrl)
+            );
         }
     }
 }
