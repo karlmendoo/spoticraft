@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import io.github.karlmendoo.spoticraft.youtube.model.LibraryItem;
 import io.github.karlmendoo.spoticraft.youtube.model.LibrarySnapshot;
 import io.github.karlmendoo.spoticraft.youtube.model.SearchSnapshot;
@@ -328,7 +329,7 @@ public final class YouTubeApiClient {
             if (error.has("message")) {
                 return error.get("message").getAsString();
             }
-        } catch (Exception exception) {
+        } catch (JsonParseException exception) {
             this.logger.debug("Failed to parse YouTube error response", exception);
         }
         if (status == 401) {

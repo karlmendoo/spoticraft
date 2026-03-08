@@ -1,6 +1,7 @@
 package io.github.karlmendoo.spoticraft.youtube;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonObject;
 import io.github.karlmendoo.spoticraft.config.SpotiCraftConfig;
 import org.slf4j.Logger;
@@ -302,7 +303,7 @@ public final class YouTubeAuthManager {
     private JsonObject errorObject(String rawBody) {
         try {
             return this.gson.fromJson(rawBody, JsonObject.class);
-        } catch (Exception exception) {
+        } catch (JsonParseException exception) {
             return new JsonObject();
         }
     }

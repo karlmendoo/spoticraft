@@ -61,7 +61,7 @@ public final class YouTubeScreen extends Screen {
         this.searchField = this.addDrawableChild(new TextFieldWidget(this.textRenderer, right - 260, top + 10, 180, 20, Text.literal("Search YouTube")));
         this.searchField.setMaxLength(100);
         this.searchField.setPlaceholder(Text.literal("Videos, channels, playlists, collections"));
-        this.searchField.setText("minecraft soundtrack");
+        this.searchField.setText("");
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Search"), button -> this.service.search(this.searchField.getText()))
             .dimensions(right - 72, top + 10, 56, 20)

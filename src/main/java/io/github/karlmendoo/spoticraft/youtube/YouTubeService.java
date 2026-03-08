@@ -274,7 +274,7 @@ public final class YouTubeService {
             applyPlayback(snapshotFor(currentMedia(), true, 0));
             rememberCurrentMedia();
             openCurrentMedia(0);
-            this.statusMessage = "Opened “" + this.playback.title() + "” on YouTube in your browser.";
+            this.statusMessage = "Opened \"" + this.playback.title() + "\" on YouTube in your browser.";
         });
     }
 

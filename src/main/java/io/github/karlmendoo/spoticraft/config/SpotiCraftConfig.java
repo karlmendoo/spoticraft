@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import io.github.karlmendoo.spoticraft.youtube.model.LibraryItem;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -19,6 +20,7 @@ public final class SpotiCraftConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String DEFAULT_REDIRECT_URI = "http://127.0.0.1:43897/callback";
     private static final int MAX_RECENT_ITEMS = 12;
+    private static final Logger LOGGER = LoggerFactory.getLogger(SpotiCraftConfig.class);
 
     public String clientId = "";
     public String clientSecret = "";
@@ -168,6 +170,7 @@ public final class SpotiCraftConfig {
             try {
                 resolvedKind = LibraryItem.Kind.valueOf(this.kind);
             } catch (IllegalArgumentException exception) {
+                LOGGER.debug("Unknown stored media kind in config: {}", this.kind, exception);
                 resolvedKind = LibraryItem.Kind.TRACK;
             }
             return new LibraryItem(resolvedKind, this.id, this.uri, this.title, this.subtitle, this.detail, this.imageUrl, this.playable);
