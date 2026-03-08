@@ -54,12 +54,7 @@ public final class AlbumArtCache {
                 return identifier;
             }
         }
-        long now = System.currentTimeMillis();
         for (String candidate : candidates) {
-            Long failedAt = this.failedLoads.get(candidate);
-            if (failedAt != null && now - failedAt < FAILURE_RETRY_DELAY_MS) {
-                continue;
-            }
             if (this.loading.contains(candidate)) {
                 return null;
             }
@@ -69,10 +64,11 @@ public final class AlbumArtCache {
     }
 
     private void loadCandidateChain(List<String> candidates, int startIndex) {
+        long now = System.currentTimeMillis();
         for (int index = startIndex; index < candidates.size(); index++) {
             String candidate = candidates.get(index);
             Long failedAt = this.failedLoads.get(candidate);
-            if (failedAt != null && System.currentTimeMillis() - failedAt < FAILURE_RETRY_DELAY_MS) {
+            if (failedAt != null && now - failedAt < FAILURE_RETRY_DELAY_MS) {
                 continue;
             }
             if (!this.loading.add(candidate)) {
@@ -129,7 +125,6 @@ public final class AlbumArtCache {
                     } catch (RuntimeException exception) {
                         this.logger.warn("Failed to register album art texture: {}", imageUrl, exception);
                         this.failedLoads.put(imageUrl, System.currentTimeMillis());
-                        loadCandidateChain(candidates, nextIndex);
                     } finally {
                         this.loading.remove(imageUrl);
                     }

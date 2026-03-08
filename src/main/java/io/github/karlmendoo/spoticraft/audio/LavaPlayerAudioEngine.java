@@ -194,13 +194,7 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
             currentSource.tick();
         } catch (RuntimeException exception) {
             this.logger.warn("Audio source tick failed, stopping playback.", exception);
-            stopInternal(false);
-            if (track != null) {
-                this.playbackState = PlaybackState.BUFFERING;
-                this.bufferingStartedAtMs = System.currentTimeMillis();
-            } else {
-                this.playbackState = PlaybackState.STOPPED;
-            }
+            failPlayback("Audio source became invalid during playback.");
             return;
         }
         if (track == null) {
