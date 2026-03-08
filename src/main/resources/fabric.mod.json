@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "spoticraft",
+  "version": "${version}",
+  "name": "SpotiCraft",
+  "description": "Spotify integration for Minecraft — control your music without leaving the game.",
+  "authors": ["karlmendoo"],
+  "contact": {
+    "sources": "https://github.com/karlmendoo/spoticraft"
+  },
+  "license": "MIT",
+  "icon": "assets/spoticraft/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["io.github.karlmendoo.spoticraft.SpotiCraftClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
