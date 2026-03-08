@@ -1,12 +1,12 @@
 package io.github.karlmendoo.spoticraft;
 
 import io.github.karlmendoo.spoticraft.config.SpotiCraftConfig;
-import io.github.karlmendoo.spoticraft.spotify.SpotifyApiClient;
-import io.github.karlmendoo.spoticraft.spotify.SpotifyAuthManager;
-import io.github.karlmendoo.spoticraft.spotify.SpotifyService;
 import io.github.karlmendoo.spoticraft.ui.AlbumArtCache;
-import io.github.karlmendoo.spoticraft.ui.SpotifyOverlay;
-import io.github.karlmendoo.spoticraft.ui.SpotifyScreen;
+import io.github.karlmendoo.spoticraft.ui.YouTubeOverlay;
+import io.github.karlmendoo.spoticraft.ui.YouTubeScreen;
+import io.github.karlmendoo.spoticraft.youtube.YouTubeApiClient;
+import io.github.karlmendoo.spoticraft.youtube.YouTubeAuthManager;
+import io.github.karlmendoo.spoticraft.youtube.YouTubeService;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -22,7 +22,7 @@ public final class SpotiCraftClient implements ClientModInitializer {
     public static final String MOD_ID = "spoticraft";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    private SpotifyService spotifyService;
+    private YouTubeService youtubeService;
     private AlbumArtCache albumArtCache;
     private KeyBinding openKey;
     private KeyBinding playPauseKey;
@@ -33,9 +33,9 @@ public final class SpotiCraftClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         SpotiCraftConfig config = SpotiCraftConfig.load(LOGGER);
-        SpotifyAuthManager authManager = new SpotifyAuthManager(config, LOGGER);
-        SpotifyApiClient apiClient = new SpotifyApiClient(authManager, LOGGER);
-        this.spotifyService = new SpotifyService(config, authManager, apiClient, LOGGER);
+        YouTubeAuthManager authManager = new YouTubeAuthManager(config, LOGGER);
+        YouTubeApiClient apiClient = new YouTubeApiClient(authManager, LOGGER);
+        this.youtubeService = new YouTubeService(config, authManager, apiClient, LOGGER);
         this.albumArtCache = new AlbumArtCache(LOGGER);
 
         this.openKey = registerKey("open", GLFW.GLFW_KEY_O);
@@ -44,7 +44,7 @@ public final class SpotiCraftClient implements ClientModInitializer {
         this.previousKey = registerKey("previous", GLFW.GLFW_KEY_J);
 
         ClientTickEvents.END_CLIENT_TICK.register(this::onEndTick);
-        HudRenderCallback.EVENT.register(new SpotifyOverlay(this.spotifyService, this.albumArtCache)::render);
+        HudRenderCallback.EVENT.register(new YouTubeOverlay(this.youtubeService, this.albumArtCache)::render);
     }
 
     private KeyBinding registerKey(String action, int keyCode) {
@@ -58,23 +58,23 @@ public final class SpotiCraftClient implements ClientModInitializer {
 
     private void onEndTick(MinecraftClient client) {
         while (this.openKey.wasPressed()) {
-            client.setScreen(new SpotifyScreen(this.spotifyService, this.albumArtCache));
+            client.setScreen(new YouTubeScreen(this.youtubeService, this.albumArtCache));
         }
         while (this.playPauseKey.wasPressed()) {
-            this.spotifyService.togglePlayPause();
+            this.youtubeService.togglePlayPause();
         }
         while (this.nextKey.wasPressed()) {
-            this.spotifyService.nextTrack();
+            this.youtubeService.nextTrack();
         }
         while (this.previousKey.wasPressed()) {
-            this.spotifyService.previousTrack();
+            this.youtubeService.previousTrack();
         }
 
         this.tickCounter++;
         if (this.tickCounter >= 100) {
             this.tickCounter = 0;
-            if (this.spotifyService.config().hasRefreshToken() && client.currentScreen == null) {
-                this.spotifyService.refreshPlayback();
+            if ((this.youtubeService.config().hasRefreshToken() || this.youtubeService.config().hasAccessToken()) && client.currentScreen == null) {
+                this.youtubeService.refreshPlayback();
             }
         }
     }

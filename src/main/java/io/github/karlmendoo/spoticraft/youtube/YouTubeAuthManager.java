@@ -1,4 +1,4 @@
-package io.github.karlmendoo.spoticraft.spotify;
+package io.github.karlmendoo.spoticraft.youtube;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -21,22 +21,13 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Objects;
 import java.util.UUID;
 
-public final class SpotifyAuthManager {
-    private static final String AUTHORIZE_URL = "https://accounts.spotify.com/authorize";
-    private static final String TOKEN_URL = "https://accounts.spotify.com/api/token";
-    private static final String SCOPES = String.join(" ",
-        "user-read-playback-state",
-        "user-modify-playback-state",
-        "user-read-currently-playing",
-        "playlist-read-private",
-        "playlist-read-collaborative",
-        "user-library-read",
-        "user-read-recently-played"
-    );
+public final class YouTubeAuthManager {
+    private static final String AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+    private static final String TOKEN_URL = "https://oauth2.googleapis.com/token";
+    private static final String SCOPES = "https://www.googleapis.com/auth/youtube.readonly";
 
     private final SpotiCraftConfig config;
     private final Logger logger;
@@ -47,14 +38,14 @@ public final class SpotifyAuthManager {
     private Thread callbackThread;
     private String activeState = "";
 
-    public SpotifyAuthManager(SpotiCraftConfig config, Logger logger) {
+    public YouTubeAuthManager(SpotiCraftConfig config, Logger logger) {
         this.config = config;
         this.logger = logger;
     }
 
     public synchronized URI startAuthorization() {
         if (!this.config.hasAppCredentials()) {
-            throw new IllegalStateException("Add your Spotify client ID and client secret to " + this.config.path());
+            throw new IllegalStateException("Add your Google OAuth client ID to " + this.config.path());
         }
 
         stopCallbackServer();
@@ -66,11 +57,13 @@ public final class SpotifyAuthManager {
             + "&redirect_uri=" + encode(this.config.redirectUri)
             + "&scope=" + encode(SCOPES)
             + "&state=" + encode(this.activeState)
-            + "&show_dialog=true";
+            + "&access_type=offline"
+            + "&include_granted_scopes=true"
+            + "&prompt=consent";
         return URI.create(AUTHORIZE_URL + "?" + query);
     }
 
-    public synchronized void ensureAccessToken() throws IOException, InterruptedException, SpotifyApiException {
+    public synchronized void ensureAccessToken() throws IOException, InterruptedException, YouTubeApiException {
         long now = Instant.now().getEpochSecond();
         if (this.config.hasAccessToken() && now + 30 < this.config.accessTokenExpiryEpochSecond) {
             return;
@@ -79,15 +72,11 @@ public final class SpotifyAuthManager {
             refreshAccessToken();
             return;
         }
-        throw new SpotifyApiException(401, "Connect your Spotify account first.");
+        throw new YouTubeApiException(401, "Connect your YouTube account first.");
     }
 
     public synchronized String accessToken() {
         return this.config.accessToken;
-    }
-
-    public synchronized boolean isConnected() {
-        return this.config.hasAccessToken() || this.config.hasRefreshToken();
     }
 
     private synchronized void startCallbackServer() {
@@ -102,7 +91,7 @@ public final class SpotifyAuthManager {
             this.callbackThread.setDaemon(true);
             this.callbackThread.start();
         } catch (IOException exception) {
-            throw new IllegalStateException("Failed to start Spotify callback server", exception);
+            throw new IllegalStateException("Failed to start YouTube callback server", exception);
         }
     }
 
@@ -120,7 +109,7 @@ public final class SpotifyAuthManager {
             handleCallback(socket, expectedPath);
         } catch (IOException exception) {
             if (!isSocketFailure(exception)) {
-                this.logger.error("Spotify callback server failed", exception);
+                this.logger.error("YouTube callback server failed", exception);
             }
         } finally {
             synchronized (this) {
@@ -138,22 +127,22 @@ public final class SpotifyAuthManager {
             JsonObject params = parseQuery(requestUri.getRawQuery());
             String receivedState = params.has("state") ? params.get("state").getAsString() : "";
             if (!Objects.equals(receivedState, this.activeState)) {
-                throw new IllegalStateException("State mismatch during Spotify sign-in.");
+                throw new IllegalStateException("State mismatch during YouTube sign-in.");
             }
             if (params.has("error")) {
                 throw new IllegalStateException(params.get("error").getAsString());
             }
             String authCode = params.has("code") ? params.get("code").getAsString() : "";
             if (authCode.isBlank()) {
-                throw new IllegalStateException("Spotify did not return an authorization code.");
+                throw new IllegalStateException("YouTube did not return an authorization code.");
             }
             exchangeAuthorizationCode(authCode);
-            response = "<html><body style='font-family:sans-serif;background:#121212;color:#fff;padding:24px'>"
-                + "<h2>SpotiCraft connected</h2><p>You can close this tab and return to Minecraft.</p></body></html>";
+            response = "<html><body style='font-family:sans-serif;background:#0f1720;color:#fff;padding:24px'>"
+                + "<h2>SpotiCraft connected to YouTube</h2><p>You can close this tab and return to Minecraft.</p></body></html>";
         } catch (Exception exception) {
-            this.logger.error("Spotify authorization failed", exception);
+            this.logger.error("YouTube authorization failed", exception);
             response = "<html><body style='font-family:sans-serif;background:#1e1e1e;color:#fff;padding:24px'>"
-                + "<h2>SpotiCraft connection failed</h2><p>" + escapeHtml(exception.getMessage()) + "</p></body></html>";
+                + "<h2>YouTube connection failed</h2><p>" + escapeHtml(exception.getMessage()) + "</p></body></html>";
             code = 500;
         } finally {
             stopCallbackServer();
@@ -170,31 +159,34 @@ public final class SpotifyAuthManager {
         }
     }
 
-    private synchronized void exchangeAuthorizationCode(String authCode) throws IOException, InterruptedException, SpotifyApiException {
+    private synchronized void exchangeAuthorizationCode(String authCode) throws IOException, InterruptedException, YouTubeApiException {
         String form = "grant_type=authorization_code"
             + "&code=" + encode(authCode)
+            + "&client_id=" + encode(this.config.clientId)
+            + optionalClientSecret()
             + "&redirect_uri=" + encode(this.config.redirectUri);
         JsonObject tokenResponse = sendTokenRequest(form);
         applyTokenResponse(tokenResponse);
     }
 
-    private synchronized void refreshAccessToken() throws IOException, InterruptedException, SpotifyApiException {
-        String form = "grant_type=refresh_token&refresh_token=" + encode(this.config.refreshToken);
+    private synchronized void refreshAccessToken() throws IOException, InterruptedException, YouTubeApiException {
+        String form = "grant_type=refresh_token"
+            + "&refresh_token=" + encode(this.config.refreshToken)
+            + "&client_id=" + encode(this.config.clientId)
+            + optionalClientSecret();
         JsonObject tokenResponse = sendTokenRequest(form);
         applyTokenResponse(tokenResponse);
     }
 
-    private JsonObject sendTokenRequest(String form) throws IOException, InterruptedException, SpotifyApiException {
-        String credentials = this.config.clientId + ':' + this.config.clientSecret;
+    private JsonObject sendTokenRequest(String form) throws IOException, InterruptedException, YouTubeApiException {
         HttpRequest request = HttpRequest.newBuilder(URI.create(TOKEN_URL))
-            .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8)))
             .header("Content-Type", "application/x-www-form-urlencoded")
             .POST(HttpRequest.BodyPublishers.ofString(form))
             .build();
 
         HttpResponse<String> response = this.httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() / 100 != 2) {
-            throw new SpotifyApiException(response.statusCode(), extractTokenError(response.body()));
+            throw new YouTubeApiException(response.statusCode(), extractTokenError(response.body()));
         }
         return this.gson.fromJson(response.body(), JsonObject.class);
     }
@@ -221,7 +213,7 @@ public final class SpotifyAuthManager {
                 try {
                     serverSocket.close();
                 } catch (IOException exception) {
-                    this.logger.debug("Failed to close Spotify callback server", exception);
+                    this.logger.debug("Failed to close YouTube callback server", exception);
                 }
             }
         }
@@ -232,19 +224,19 @@ public final class SpotifyAuthManager {
         String[] requestLines = request.split("\r\n");
         String requestLine = requestLines.length == 0 ? "" : requestLines[0];
         if (requestLine.isBlank()) {
-            throw new IllegalStateException("Spotify callback request was empty.");
+            throw new IllegalStateException("YouTube callback request was empty.");
         }
 
         String[] requestParts = requestLine.split(" ");
         if (requestParts.length < 2) {
-            throw new IllegalStateException("Spotify callback request was malformed.");
+            throw new IllegalStateException("YouTube callback request was malformed.");
         }
 
         String target = requestParts[1];
         int queryIndex = target.indexOf('?');
         String path = queryIndex >= 0 ? target.substring(0, queryIndex) : target;
         if (!Objects.equals(path, expectedPath)) {
-            throw new IllegalStateException("Unexpected Spotify callback path: " + path);
+            throw new IllegalStateException("Unexpected YouTube callback path: " + path);
         }
 
         return URI.create("http://localhost" + target);
@@ -259,7 +251,7 @@ public final class SpotifyAuthManager {
         while ((current = bufferedInputStream.read()) != -1) {
             output.write(current);
             if (output.size() > maxBytes) {
-                throw new IllegalStateException("Spotify callback request headers were too large.");
+                throw new IllegalStateException("YouTube callback request headers were too large.");
             }
             if (previous == '\r' && current == '\n') {
                 byte[] bytes = output.toByteArray();
@@ -274,7 +266,7 @@ public final class SpotifyAuthManager {
             }
             previous = current;
         }
-        throw new IllegalStateException("Spotify callback request ended before headers completed.");
+        throw new IllegalStateException("YouTube callback request ended before headers completed.");
     }
 
     private static JsonObject parseQuery(String query) {
@@ -289,6 +281,10 @@ public final class SpotifyAuthManager {
             result.addProperty(key, value);
         }
         return result;
+    }
+
+    private String optionalClientSecret() {
+        return this.config.hasClientSecret() ? "&client_secret=" + encode(this.config.clientSecret) : "";
     }
 
     private static String encode(String value) {
@@ -317,9 +313,15 @@ public final class SpotifyAuthManager {
             return json.get("error_description").getAsString();
         }
         if (json.has("error")) {
-            return json.get("error").getAsString();
+            if (json.get("error").isJsonPrimitive()) {
+                return json.get("error").getAsString();
+            }
+            JsonObject error = json.getAsJsonObject("error");
+            if (error.has("message")) {
+                return error.get("message").getAsString();
+            }
         }
-        return "Spotify authentication failed.";
+        return "YouTube authentication failed.";
     }
 
     private static String escapeHtml(String message) {

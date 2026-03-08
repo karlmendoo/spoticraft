@@ -3,7 +3,7 @@
   "id": "spoticraft",
   "version": "${version}",
   "name": "SpotiCraft",
-  "description": "A polished in-game Spotify controller for Minecraft 1.21.11 on Fabric.",
+  "description": "A polished in-game YouTube music browser for Minecraft 1.21.11 on Fabric.",
   "authors": [
     "Karl Mendoo"
   ],

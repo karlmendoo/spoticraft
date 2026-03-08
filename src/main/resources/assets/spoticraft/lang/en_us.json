@@ -1,8 +1,8 @@
 {
   "key.spoticraft.open": "Open SpotiCraft",
-  "key.spoticraft.play_pause": "Spotify Play/Pause",
-  "key.spoticraft.next": "Spotify Next Track",
-  "key.spoticraft.previous": "Spotify Previous Track",
+  "key.spoticraft.play_pause": "YouTube Play/Pause",
+  "key.spoticraft.next": "YouTube Next Video",
+  "key.spoticraft.previous": "YouTube Previous Video",
   "category.spoticraft": "SpotiCraft",
   "key.categories.spoticraft.keybindings": "SpotiCraft"
 }

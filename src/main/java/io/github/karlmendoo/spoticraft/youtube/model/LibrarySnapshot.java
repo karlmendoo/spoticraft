@@ -1,4 +1,4 @@
-package io.github.karlmendoo.spoticraft.spotify.model;
+package io.github.karlmendoo.spoticraft.youtube.model;
 
 import java.util.List;
 

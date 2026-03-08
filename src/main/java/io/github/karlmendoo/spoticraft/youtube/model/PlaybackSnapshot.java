@@ -1,4 +1,4 @@
-package io.github.karlmendoo.spoticraft.spotify.model;
+package io.github.karlmendoo.spoticraft.youtube.model;
 
 public record PlaybackSnapshot(
     String trackId,
@@ -22,7 +22,7 @@ public record PlaybackSnapshot(
             "",
             "",
             "Nothing playing",
-            "Connect Spotify to see playback here",
+            "Connect YouTube to browse and play media",
             "",
             "",
             false,
@@ -31,7 +31,7 @@ public record PlaybackSnapshot(
             70,
             false,
             RepeatMode.OFF,
-            "No active device",
+            "Browser playback",
             "",
             false
         );

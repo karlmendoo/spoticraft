@@ -1,10 +1,10 @@
 package io.github.karlmendoo.spoticraft.ui;
 
-import io.github.karlmendoo.spoticraft.spotify.SpotifyService;
-import io.github.karlmendoo.spoticraft.spotify.model.LibraryItem;
-import io.github.karlmendoo.spoticraft.spotify.model.LibrarySnapshot;
-import io.github.karlmendoo.spoticraft.spotify.model.PlaybackSnapshot;
-import io.github.karlmendoo.spoticraft.spotify.model.SearchSnapshot;
+import io.github.karlmendoo.spoticraft.youtube.YouTubeService;
+import io.github.karlmendoo.spoticraft.youtube.model.LibraryItem;
+import io.github.karlmendoo.spoticraft.youtube.model.LibrarySnapshot;
+import io.github.karlmendoo.spoticraft.youtube.model.PlaybackSnapshot;
+import io.github.karlmendoo.spoticraft.youtube.model.SearchSnapshot;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.Click;
@@ -23,7 +23,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
-public final class SpotifyScreen extends Screen {
+public final class YouTubeScreen extends Screen {
     private static final int SCREEN_BACKGROUND_DARK_OVERLAY_COLOR = 0xCC0D1117;
     private static final int HEADER_TEXT_X = 32;
     private static final int HEADER_SUBTITLE_X = 44;
@@ -33,7 +33,7 @@ public final class SpotifyScreen extends Screen {
     private static final int ITEM_TEXT_X_OFFSET = 38;
     private static final int ITEM_TEXT_TO_KIND_GAP = 10;
 
-    private final SpotifyService service;
+    private final YouTubeService service;
     private final AlbumArtCache albumArtCache;
     private final long openedAtMs = System.currentTimeMillis();
     private final List<ClickableRow> libraryRows = new ArrayList<>();
@@ -47,7 +47,7 @@ public final class SpotifyScreen extends Screen {
     private LibraryTab selectedTab = LibraryTab.PLAYLISTS;
     private int libraryScroll;
 
-    public SpotifyScreen(SpotifyService service, AlbumArtCache albumArtCache) {
+    public YouTubeScreen(YouTubeService service, AlbumArtCache albumArtCache) {
         super(Text.literal("SpotiCraft"));
         this.service = service;
         this.albumArtCache = albumArtCache;
@@ -58,9 +58,9 @@ public final class SpotifyScreen extends Screen {
         int top = 24;
         int right = this.width - 24;
 
-        this.searchField = this.addDrawableChild(new TextFieldWidget(this.textRenderer, right - 260, top + 10, 180, 20, Text.literal("Search Spotify")));
+        this.searchField = this.addDrawableChild(new TextFieldWidget(this.textRenderer, right - 260, top + 10, 180, 20, Text.literal("Search YouTube")));
         this.searchField.setMaxLength(100);
-        this.searchField.setPlaceholder(Text.literal("Tracks, artists, albums, playlists"));
+        this.searchField.setPlaceholder(Text.literal("Videos, channels, playlists, collections"));
         this.searchField.setText("minecraft soundtrack");
 
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Search"), button -> this.service.search(this.searchField.getText()))
@@ -105,7 +105,7 @@ public final class SpotifyScreen extends Screen {
             .dimensions(tabX + 140, 88, 60, 20)
             .build());
 
-        if (this.service.config().hasRefreshToken()) {
+        if (this.service.config().hasRefreshToken() || this.service.config().hasAccessToken()) {
             this.service.refreshAll();
         }
     }
@@ -130,7 +130,7 @@ public final class SpotifyScreen extends Screen {
 
         int headerColor = 0xFFEEF2F7;
         int subColor = 0xFF99A3B1;
-        int accent = 0xFF1DB954;
+        int accent = 0xFFFF4343;
 
         int leftX = 24;
         int leftY = 56 + slideY;
@@ -148,7 +148,7 @@ public final class SpotifyScreen extends Screen {
         drawPanel(context, rightX, rightY, rightWidth, panelHeight, 0xFFFF7EE3, 0.72F);
 
         context.drawText(this.textRenderer, Text.literal("SpotiCraft").formatted(Formatting.BOLD), HEADER_TEXT_X, HEADER_TITLE_Y, headerColor, false);
-        context.drawText(this.textRenderer, Text.literal("Spotify inside Minecraft, with a polished native flow."), HEADER_SUBTITLE_X, HEADER_SUBTITLE_Y, subColor, false);
+        context.drawText(this.textRenderer, Text.literal("The same polished Minecraft flow, now powered by YouTube."), HEADER_SUBTITLE_X, HEADER_SUBTITLE_Y, subColor, false);
 
         drawCurrentPlayback(context, playback, leftX, leftY, leftWidth, panelHeight);
         drawLibrary(context, library, centerX, centerY, centerWidth, panelHeight, mouseX, mouseY);
@@ -160,14 +160,14 @@ public final class SpotifyScreen extends Screen {
 
     private void drawCurrentPlayback(DrawContext context, PlaybackSnapshot playback, int x, int y, int width, int height) {
         context.drawText(this.textRenderer, Text.literal("Now Playing").formatted(Formatting.BOLD), x + 16, y + 16, 0xFFFFFFFF, false);
-        context.drawText(this.textRenderer, Text.literal(playback.deviceName()), x + 16, y + 30, 0xFF98F7B0, false);
+        context.drawText(this.textRenderer, Text.literal(playback.deviceName()), x + 16, y + 30, 0xFFFFB7B7, false);
 
         Identifier art = this.albumArtCache.request(playback.imageUrl());
         if (art != null) {
             context.drawTexture(RenderPipelines.GUI_TEXTURED, art, x + 16, y + 52, 0, 0, 124, 124, 124, 124);
         } else {
-            context.fill(x + 16, y + 52, x + 140, y + 176, 0x6620BC6B);
-            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("♪"), x + 78, y + 107, 0xFFFFFFFF);
+            context.fill(x + 16, y + 52, x + 140, y + 176, 0x66533939);
+            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal("▶"), x + 78, y + 107, 0xFFFFFFFF);
         }
 
         int textX = x + 150;
@@ -181,14 +181,14 @@ public final class SpotifyScreen extends Screen {
         int renderedProgress = this.service.renderedProgressMs();
         int filled = (int) ((renderedProgress / (float) Math.max(1, playback.durationMs())) * progressWidth);
         context.fill(progressX, progressY, progressX + progressWidth, progressY + 6, 0x44323A46);
-        context.fill(progressX, progressY, progressX + filled, progressY + 6, 0xFF1DB954);
+        context.fill(progressX, progressY, progressX + filled, progressY + 6, 0xFFFF4343);
         context.drawText(this.textRenderer, Text.literal(formatMillis(renderedProgress)), progressX, progressY + 10, 0xFFEFF3F7, false);
         context.drawText(this.textRenderer, Text.literal(formatMillis(playback.durationMs())), progressX + progressWidth - 30, progressY + 10, 0xFFEFF3F7, false);
 
         int hintY = this.height - PLAYBACK_HINT_Y;
-        context.drawText(this.textRenderer, Text.literal("Quick keys"), x + 16, hintY, 0xFFAAF1C0, false);
+        context.drawText(this.textRenderer, Text.literal("Quick keys"), x + 16, hintY, 0xFFFFC0C0, false);
         context.drawText(this.textRenderer, Text.literal("O open · J previous · K play/pause · L next"), x + 16, hintY + 14, 0xFFDAE1EA, false);
-        context.drawText(this.textRenderer, Text.literal("Connect flow uses Spotify OAuth in your browser and returns via localhost."), x + 16, hintY + 30, 0xFFBBC4CF, false);
+        context.drawText(this.textRenderer, Text.literal("Connect flow uses Google OAuth, then opens YouTube in your browser when playback starts."), x + 16, hintY + 30, 0xFFBBC4CF, false);
     }
 
     private void drawLibrary(DrawContext context, LibrarySnapshot library, int x, int y, int width, int height, int mouseX, int mouseY) {
@@ -207,16 +207,16 @@ public final class SpotifyScreen extends Screen {
             drawItemRow(context, x + 12, rowY, width - 24, item, mouseX, mouseY, this.libraryRows);
         }
         if (items.isEmpty()) {
-            context.drawText(this.textRenderer, Text.literal("No items yet. Connect Spotify and press Refresh."), x + 16, y + 68, 0xFFDFE5EC, false);
+            context.drawText(this.textRenderer, Text.literal("No items yet. Connect YouTube and press Refresh."), x + 16, y + 68, 0xFFDFE5EC, false);
         }
     }
 
     private void drawSearch(DrawContext context, SearchSnapshot search, int x, int y, int width, int height, int mouseX, int mouseY) {
         context.drawText(this.textRenderer, Text.literal("Search").formatted(Formatting.BOLD), x + 16, y + 16, 0xFFFFFFFF, false);
         int currentY = y + 42;
-        currentY = drawSearchSection(context, x, width, mouseX, mouseY, currentY, "Tracks", search.tracks());
-        currentY = drawSearchSection(context, x, width, mouseX, mouseY, currentY + 6, "Albums", search.albums());
-        currentY = drawSearchSection(context, x, width, mouseX, mouseY, currentY + 6, "Artists", search.artists());
+        currentY = drawSearchSection(context, x, width, mouseX, mouseY, currentY, "Videos", search.tracks());
+        currentY = drawSearchSection(context, x, width, mouseX, mouseY, currentY + 6, "Collections", search.albums());
+        currentY = drawSearchSection(context, x, width, mouseX, mouseY, currentY + 6, "Channels", search.artists());
         drawSearchSection(context, x, width, mouseX, mouseY, currentY + 6, "Playlists", search.playlists());
     }
 
@@ -243,7 +243,7 @@ public final class SpotifyScreen extends Screen {
         int textWidth = Math.max(1, kindX - (x + ITEM_TEXT_X_OFFSET) - ITEM_TEXT_TO_KIND_GAP);
         context.fill(x, y, x + width, y + 32, background);
         if (hovered) {
-            context.fill(x, y, x + 3, y + 32, 0xFF1DB954);
+            context.fill(x, y, x + 3, y + 32, 0xFFFF4343);
         }
 
         Identifier art = this.albumArtCache.request(item.imageUrl());
@@ -254,13 +254,13 @@ public final class SpotifyScreen extends Screen {
         }
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.title(), textWidth), x + ITEM_TEXT_X_OFFSET, y + 6, 0xFFFFFFFF, false);
         context.drawText(this.textRenderer, this.textRenderer.trimToWidth(item.subtitle(), textWidth), x + ITEM_TEXT_X_OFFSET, y + 18, 0xFFC6CED8, false);
-        context.drawText(this.textRenderer, kindText, kindX, y + 10, item.playable() ? 0xFF98F7B0 : 0xFFFFD479, false);
+        context.drawText(this.textRenderer, kindText, kindX, y + 10, item.playable() ? 0xFFFFB7B7 : 0xFFFFD479, false);
         registry.add(new ClickableRow(x, y, width, 32, item));
     }
 
     private void drawStatus(DrawContext context, int x, int y, int width) {
         String error = this.service.errorMessage();
-        String status = this.service.busy() ? "Working with Spotify…" : this.service.statusMessage();
+        String status = this.service.busy() ? "Working with YouTube…" : this.service.statusMessage();
         if (!error.isBlank()) {
             context.fill(x, y, x + width, y + 18, 0x99A32323);
             context.drawText(this.textRenderer, Text.literal(error), x + 8, y + 5, 0xFFFFFFFF, false);
@@ -340,7 +340,7 @@ public final class SpotifyScreen extends Screen {
 
     private enum LibraryTab {
         PLAYLISTS("Playlists"),
-        LIKED("Liked Songs"),
+        LIKED("Liked Videos"),
         RECENT("Recently Played");
 
         private final String label;
@@ -393,7 +393,7 @@ public final class SpotifyScreen extends Screen {
             int volume = MathHelper.clamp((int) Math.round(this.value * 100.0D), 0, 100);
             if (volume != this.lastCommittedVolume) {
                 this.lastCommittedVolume = volume;
-                SpotifyScreen.this.service.setVolume(volume);
+                YouTubeScreen.this.service.setVolume(volume);
             }
         }
     }
