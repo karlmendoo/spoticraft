@@ -35,8 +35,8 @@ import java.util.concurrent.TimeoutException;
 
 public final class LavaPlayerAudioEngine implements AutoCloseable {
     private static final int TRACK_LOAD_TIMEOUT_SECONDS = 30;
-    // Keep a small minimum buffer so OpenAL receives enough PCM data per poll even if the caller asks for tiny chunks.
-    private static final int MIN_FRAME_BUFFER_SIZE = 2048;
+    // One COMMON_PCM_S16_LE frame: 960 samples/channel × 2 channels × 2 bytes/sample = 3840 bytes (20 ms at 48 kHz).
+    private static final int LAVA_FRAME_SIZE = 960 * 2 * 2;
     // Wait briefly for decoded frames so the stream can bridge normal network jitter without stalling the source forever.
     private static final long FRAME_PROVISION_TIMEOUT_MS = 250L;
     private static final long BUFFERING_THRESHOLD_MS = 1_500L;
@@ -408,8 +408,9 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
     private final class LavaPlayerAudioStream implements AudioStream {
         private final AudioPlayer player;
         private final MutableAudioFrame mutableFrame = new MutableAudioFrame();
+        private final ByteBuffer frameBuffer = ByteBuffer.allocateDirect(LAVA_FRAME_SIZE);
         private volatile boolean closed;
-        private ByteBuffer silenceBuffer = ByteBuffer.allocateDirect(MIN_FRAME_BUFFER_SIZE);
+        private ByteBuffer silenceBuffer = ByteBuffer.allocateDirect(LAVA_FRAME_SIZE);
 
         private LavaPlayerAudioStream(AudioPlayer player) {
             this.player = player;
@@ -426,26 +427,37 @@ public final class LavaPlayerAudioEngine implements AutoCloseable {
                 return EMPTY_BUFFER.duplicate();
             }
 
-            int size = Math.max(MIN_FRAME_BUFFER_SIZE, bufferSize);
-            ByteBuffer buffer = ByteBuffer.allocateDirect(size);
-            this.mutableFrame.setBuffer(buffer);
-            try {
-                boolean provided = this.player.provide(this.mutableFrame, FRAME_PROVISION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-                if (!provided) {
-                    frameUnavailable();
-                    return silenceBuffer(size);
+            int size = Math.max(LAVA_FRAME_SIZE, bufferSize);
+            ByteBuffer output = ByteBuffer.allocateDirect(size);
+            boolean anyProvided = false;
+
+            while (output.remaining() >= LAVA_FRAME_SIZE) {
+                this.frameBuffer.clear();
+                this.mutableFrame.setBuffer(this.frameBuffer);
+                try {
+                    long timeout = anyProvided ? 0L : FRAME_PROVISION_TIMEOUT_MS;
+                    boolean provided = this.player.provide(this.mutableFrame, timeout, TimeUnit.MILLISECONDS);
+                    if (!provided) {
+                        break;
+                    }
+                } catch (TimeoutException exception) {
+                    break;
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted while streaming audio frame.", exception);
                 }
-            } catch (TimeoutException exception) {
-                frameUnavailable();
-                return silenceBuffer(size);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Interrupted while streaming audio frame.", exception);
+                this.frameBuffer.flip();
+                if (!this.frameBuffer.hasRemaining()) {
+                    break;
+                }
+                output.put(this.frameBuffer);
+                anyProvided = true;
             }
-            buffer.flip();
-            if (buffer.hasRemaining()) {
+
+            output.flip();
+            if (output.hasRemaining()) {
                 frameProvided();
-                return buffer;
+                return output;
             }
             frameUnavailable();
             return silenceBuffer(size);

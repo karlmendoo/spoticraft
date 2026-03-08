@@ -85,7 +85,7 @@ public final class AlbumArtCache {
             try {
                 HttpRequest request = HttpRequest.newBuilder(URI.create(imageUrl))
                     .header("User-Agent", USER_AGENT)
-                    .header("Accept", "image/png,image/jpeg,image/webp,image/*,*/*;q=0.8")
+                    .header("Accept", "image/jpeg, image/png, */*;q=0.1")
                     .GET()
                     .build();
                 HttpResponse<byte[]> response = this.httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
